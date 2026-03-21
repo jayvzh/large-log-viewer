@@ -113,14 +113,14 @@ impl LogFileReader {
         Ok(LineIterator::new(file, self.file_size))
     }
     
-    pub fn read_lines_mmap(&self) -> Result<MmapLineIterator, String> {
+    pub fn read_lines_mmap(&self) -> Result<MmapReader, String> {
         let file = File::open(&self.file_path)
             .map_err(|e| format!("Failed to open file: {}", e))?;
         
         let mmap = unsafe { Mmap::map(&file) }
             .map_err(|e| format!("Failed to mmap file: {}", e))?;
         
-        Ok(MmapLineIterator::new(mmap))
+        Ok(MmapReader::new(mmap))
     }
     
     pub fn read_raw_content(&self, offset: u64, length: u32) -> Result<String, String> {
@@ -185,72 +185,70 @@ impl Iterator for LineIterator {
     }
 }
 
-pub struct MmapLineIterator {
-    mmap: Option<Mmap>,
-    pos: usize,
-    line_number: u64,
-}
-
-impl MmapLineIterator {
-    fn new(mmap: Mmap) -> Self {
-        Self { 
-            mmap: Some(mmap), 
-            pos: 0,
-            line_number: 0,
-        }
-    }
-    
-    pub fn progress(&self) -> f32 {
-        if let Some(ref mmap) = self.mmap {
-            if mmap.len() == 0 {
-                100.0
-            } else {
-                (self.pos as f32 / mmap.len() as f32) * 100.0
-            }
-        } else {
-            100.0
-        }
-    }
-}
-
-pub struct MmapLine {
-    pub data: Vec<u8>,
+pub struct MmapLine<'a> {
+    pub data: &'a [u8],
     pub line_number: u64,
     pub offset: u64,
 }
 
-impl Iterator for MmapLineIterator {
-    type Item = MmapLine;
-    
-    fn next(&mut self) -> Option<Self::Item> {
-        let mmap = self.mmap.as_ref()?;
-        
-        if self.pos >= mmap.len() {
+pub struct MmapReader {
+    mmap: Mmap,
+    pos: usize,
+    line_number: u64,
+}
+
+impl MmapReader {
+    fn new(mmap: Mmap) -> Self {
+        Self {
+            mmap,
+            pos: 0,
+            line_number: 0,
+        }
+    }
+
+    pub fn next_line(&mut self) -> Option<MmapLine<'_>> {
+        if self.pos >= self.mmap.len() {
             return None;
         }
-        
+
         let start = self.pos;
         let mut end = start;
-        
-        while end < mmap.len() && mmap[end] != b'\n' {
+
+        while end < self.mmap.len() && self.mmap[end] != b'\n' {
             end += 1;
         }
-        
-        let line = mmap[start..end].to_vec();
+
+        let line_data = &self.mmap[start..end];
         self.line_number += 1;
         let line_number = self.line_number;
         let offset = start as u64;
-        
-        if end < mmap.len() {
+
+        if end < self.mmap.len() {
             self.pos = end + 1;
         } else {
             self.pos = end;
         }
-        
+
         Some(MmapLine {
-            data: line,
+            data: line_data,
             line_number,
             offset,
         })
+    }
+
+    pub fn progress(&self) -> f32 {
+        if self.mmap.len() == 0 {
+            100.0
+        } else {
+            (self.pos as f32 / self.mmap.len() as f32) * 100.0
+        }
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.mmap.len().saturating_sub(self.pos)
+    }
+
+    pub fn total_size(&self) -> usize {
+        self.mmap.len()
     }
 }

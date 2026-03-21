@@ -152,6 +152,8 @@ pub struct ParseProgress {
 pub struct AppSettings {
     pub theme: String,
     pub encoding: String,
+    #[serde(default)]
+    pub parallel_workers: Option<usize>,
 }
 
 impl Default for AppSettings {
@@ -159,6 +161,7 @@ impl Default for AppSettings {
         Self {
             theme: "dark".to_string(),
             encoding: "auto".to_string(),
+            parallel_workers: None,
         }
     }
 }

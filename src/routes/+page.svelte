@@ -10,7 +10,7 @@
   import HelpModal from '$lib/components/HelpModal.svelte';
   import { logStore } from '$lib/stores/logStore';
   import { settingsStore } from '$lib/stores/settingsStore';
-  import { onParseProgress } from '$lib/api';
+  import { onParseProgress, isTauriSync } from '$lib/api';
 
   let selectedLogId = $state<number | null>(null);
   let activeCategory = $state<string>('all');
@@ -24,6 +24,8 @@
   let loadStartTime = $state(0);
   let loadTime = $state(0);
   let totalEntries = $state(0);
+  let detailHeight = $state(180);
+  let isResizing = $state(false);
 
   $effect(() => {
     const unsubscribe = logStore.subscribe(() => {
@@ -48,17 +50,17 @@
     selectedLogId = id;
   }
 
-  function handleCategoryChange(category: string) {
+  async function handleCategoryChange(category: string) {
     activeCategory = category;
-    logStore.setActiveCategory(category);
+    await logStore.setActiveCategory(category);
   }
 
-  function handleSearch(query: string, scope: string, mode: string) {
-    logStore.setSearchQuery(query, scope, mode);
+  async function handleSearch(query: string, scope: string, mode: string) {
+    await logStore.setSearchQuery(query, scope, mode);
   }
 
-  function handleTimeFilter(filter: string) {
-    logStore.setTimeFilter(filter);
+  async function handleTimeFilter(filter: string) {
+    await logStore.setTimeFilter(filter);
   }
 
   function handleRefresh() {
@@ -103,19 +105,36 @@
     const files = e.dataTransfer?.files;
     if (files && files.length > 0) {
       const file = files[0];
-      if (file.name.endsWith('.log') || file.name.endsWith('.txt') || file.name.endsWith('.json')) {
+      const isValidFile = file.name.endsWith('.log') || 
+                          file.name.endsWith('.txt') || 
+                          file.name.endsWith('.json') ||
+                          file.name.endsWith('.1') ||
+                          !file.name.includes('.');
+      
+      if (isValidFile) {
         statusMessage = '正在加载文件...';
         loadStartTime = Date.now();
         try {
-          const path = (file as any).path || file.name;
-          await logStore.loadFile(path);
-          loadTime = Date.now() - loadStartTime;
-          totalEntries = logStore.getStats().all;
-          statusMessage = '';
+          if (isTauriSync()) {
+            const path = (file as any).path;
+            if (path) {
+              await logStore.loadFile(path);
+              loadTime = Date.now() - loadStartTime;
+              totalEntries = logStore.getStats().all;
+              statusMessage = '';
+            } else {
+              statusMessage = '无法获取文件路径';
+            }
+          } else {
+            statusMessage = '拖拽功能需要在 Tauri 桌面应用中使用。\n请运行 pnpm tauri dev 启动桌面应用。';
+            console.warn('Drag and drop file loading is only supported in Tauri environment');
+          }
         } catch (err) {
           console.error('Failed to load file:', err);
           statusMessage = '加载文件失败';
         }
+      } else {
+        statusMessage = '不支持的文件类型，请拖拽 .log, .txt, .json 文件';
       }
     }
   }
@@ -134,6 +153,7 @@
         searchInput.focus();
       }
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       activeCategory = 'all';
       logStore.setActiveCategory('all');
       logStore.setSearchQuery('', 'all', 'fuzzy');
@@ -155,6 +175,28 @@
 
   function handleCloseHelp() {
     showHelp = false;
+  }
+
+  function handleResizeStart(e: MouseEvent) {
+    e.preventDefault();
+    isResizing = true;
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+  }
+
+  function handleResizeMove(e: MouseEvent) {
+    if (!isResizing) return;
+    const mainContent = document.querySelector('.main-content');
+    if (!mainContent) return;
+    const rect = mainContent.getBoundingClientRect();
+    const newHeight = rect.bottom - e.clientY;
+    detailHeight = Math.min(400, Math.max(100, newHeight));
+  }
+
+  function handleResizeEnd() {
+    isResizing = false;
+    document.removeEventListener('mousemove', handleResizeMove);
+    document.removeEventListener('mouseup', handleResizeEnd);
   }
 </script>
 
@@ -192,7 +234,15 @@
         onSelect={handleLogSelect}
       />
     </div>
-    <div class="log-detail-panel">
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div 
+      class="resize-handle"
+      class:active={isResizing}
+      onmousedown={handleResizeStart}
+      role="separator"
+      aria-orientation="horizontal"
+    ></div>
+    <div class="log-detail-panel" style="height: {detailHeight}px;">
       <LogDetail logId={selectedLogId} />
     </div>
   </div>
@@ -247,7 +297,7 @@
     --color-trace: #606060;
     --color-other: #cccccc;
     --header-height: 40px;
-    --filebar-height: 36px;
+    --filebar-height: 44px;
     --control-height: 50px;
     --tabs-height: 40px;
     --status-height: 30px;
@@ -257,9 +307,16 @@
     --color-bg-primary: #ffffff;
     --color-bg-secondary: #f3f3f3;
     --color-bg-tertiary: #e5e5e5;
-    --color-text-primary: #333333;
-    --color-text-secondary: #666666;
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #505050;
     --color-border: #d4d4d4;
+    --color-fatal: #c42b2b;
+    --color-error: #c42b2b;
+    --color-warn: #8a6d00;
+    --color-info: #0066cc;
+    --color-debug: #666666;
+    --color-trace: #888888;
+    --color-other: #333333;
   }
 
   * {
@@ -278,6 +335,7 @@
 
   .main-content {
     display: flex;
+    flex-direction: column;
     flex: 1;
     overflow: hidden;
     border-top: 1px solid var(--color-border);
@@ -286,14 +344,45 @@
 
   .log-list-panel {
     flex: 1;
-    min-width: 300px;
+    min-height: 100px;
     overflow: hidden;
-    border-right: 1px solid var(--color-border);
+  }
+
+  .resize-handle {
+    height: 6px;
+    background-color: var(--color-bg-secondary);
+    cursor: ns-resize;
+    flex-shrink: 0;
+    position: relative;
+    transition: background-color 0.15s ease;
+  }
+
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 3px;
+    background-color: var(--color-border);
+    border-radius: 2px;
+    transition: background-color 0.15s ease;
+  }
+
+  .resize-handle:hover,
+  .resize-handle.active {
+    background-color: var(--color-accent);
+  }
+
+  .resize-handle:hover::after,
+  .resize-handle.active::after {
+    background-color: var(--color-text-primary);
   }
 
   .log-detail-panel {
-    flex: 1;
-    min-width: 300px;
+    flex-shrink: 0;
+    min-height: 100px;
     overflow: hidden;
   }
 

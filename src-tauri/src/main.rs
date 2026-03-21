@@ -9,6 +9,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_os::init())
         .manage(AppState::new(db))
         .invoke_handler(tauri::generate_handler![
             log_viewer_lib::commands::open_file,
@@ -17,7 +18,9 @@ fn main() {
             log_viewer_lib::commands::get_entry_detail,
             log_viewer_lib::commands::get_stats,
             log_viewer_lib::commands::filter_by_level,
+            log_viewer_lib::commands::filter_by_time,
             log_viewer_lib::commands::search,
+            log_viewer_lib::commands::filter_logs,
             log_viewer_lib::commands::get_current_file,
             log_viewer_lib::commands::clear_cache,
             log_viewer_lib::commands::get_cache_info,

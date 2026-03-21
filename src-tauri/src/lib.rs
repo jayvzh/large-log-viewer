@@ -175,6 +175,7 @@ mod tests {
             processed_bytes: 500,
             entries_parsed: 100,
             percentage: 50.0,
+            phase: "解析中".to_string(),
             is_complete: false,
         };
         
