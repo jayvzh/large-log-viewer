@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -25,7 +26,7 @@ impl LogLevel {
             _ => LogLevel::Other,
         }
     }
-    
+
     pub fn as_str(&self) -> &'static str {
         match self {
             LogLevel::Fatal => "FATAL",
@@ -46,6 +47,53 @@ impl Default for LogLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredLogTemplate {
+    pub name: String,
+    pub pattern: String,
+    #[serde(default)]
+    pub field_mapping: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateMatchSummary {
+    pub template_name: String,
+    pub matched_lines: usize,
+    pub total_lines: usize,
+    pub success_rate: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateCatalog {
+    pub built_in: Vec<StoredLogTemplate>,
+    pub user_defined: Vec<StoredLogTemplate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEvent {
+    pub timestamp: Option<String>,
+    pub level: Option<String>,
+    pub source: Option<String>,
+    pub message: String,
+    #[serde(default)]
+    pub extra: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplatePreviewResponse {
+    pub matched: bool,
+    pub template_name: String,
+    pub event: Option<LogEvent>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParseSessionInfo {
+    pub mode: String,
+    pub active_template: String,
+    pub detection: Vec<TemplateMatchSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
     pub id: u64,
     pub file_id: u64,
@@ -56,9 +104,12 @@ pub struct LogEntry {
     pub summary: SmallVec<[u8; 128]>,
     pub raw_offset: u64,
     pub raw_length: u32,
+    pub template_name: String,
+    pub extra: HashMap<String, String>,
 }
 
 impl LogEntry {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: u64,
         file_id: u64,
@@ -69,6 +120,8 @@ impl LogEntry {
         summary: &str,
         raw_offset: u64,
         raw_length: u32,
+        template_name: &str,
+        extra: HashMap<String, String>,
     ) -> Self {
         Self {
             id,
@@ -80,13 +133,15 @@ impl LogEntry {
             summary: SmallVec::from_slice(summary.as_bytes()),
             raw_offset,
             raw_length,
+            template_name: template_name.to_string(),
+            extra,
         }
     }
-    
+
     pub fn logger_str(&self) -> &str {
         std::str::from_utf8(&self.logger).unwrap_or("Unknown")
     }
-    
+
     pub fn summary_str(&self) -> &str {
         std::str::from_utf8(&self.summary).unwrap_or("")
     }
@@ -100,6 +155,9 @@ pub struct LogEntryView {
     pub logger: String,
     pub summary: String,
     pub raw: String,
+    pub template_name: String,
+    #[serde(default)]
+    pub extra: HashMap<String, String>,
 }
 
 impl From<&LogEntry> for LogEntryView {
@@ -111,6 +169,8 @@ impl From<&LogEntry> for LogEntryView {
             logger: entry.logger_str().to_string(),
             summary: entry.summary_str().to_string(),
             raw: String::new(),
+            template_name: entry.template_name.clone(),
+            extra: entry.extra.clone(),
         }
     }
 }

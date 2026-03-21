@@ -17,8 +17,8 @@ pub mod windows {
     const APP_NAME: &str = "LogViewer";
 
     fn get_exe_path() -> Result<String, String> {
-        let exe_path = std::env::current_exe()
-            .map_err(|e| format!("Failed to get exe path: {}", e))?;
+        let exe_path =
+            std::env::current_exe().map_err(|e| format!("Failed to get exe path: {}", e))?;
         Ok(exe_path.to_string_lossy().to_string())
     }
 
@@ -161,7 +161,12 @@ pub mod windows {
             }
             const SHCNE_ASSOCCHANGED: u32 = 0x08000000;
             const SHCNF_IDLIST: u32 = 0x0000;
-            SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, std::ptr::null(), std::ptr::null());
+            SHChangeNotify(
+                SHCNE_ASSOCCHANGED,
+                SHCNF_IDLIST,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
         }
     }
 }

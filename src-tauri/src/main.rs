@@ -7,14 +7,14 @@ use tauri::Emitter;
 
 fn main() {
     let db = Database::new().expect("Failed to initialize database");
-    
+
     let args: Vec<String> = env::args().collect();
     let initial_file = if args.len() > 1 {
         Some(args[1].clone())
     } else {
         None
     };
-    
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -23,6 +23,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             log_viewer_lib::commands::open_file,
             log_viewer_lib::commands::parse_log,
+            log_viewer_lib::commands::get_templates,
+            log_viewer_lib::commands::save_template,
+            log_viewer_lib::commands::delete_template,
+            log_viewer_lib::commands::preview_template,
+            log_viewer_lib::commands::detect_template_for_lines,
+            log_viewer_lib::commands::get_parse_session,
             log_viewer_lib::commands::get_entries,
             log_viewer_lib::commands::get_entry_detail,
             log_viewer_lib::commands::get_stats,
