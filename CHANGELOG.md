@@ -1,5 +1,87 @@
 # 变更日志
 
+## v1.9.9
+
+### UI 优化
+- 设置模态框布局优化
+  - 主题颜色选项（浅色/深色）改为横向排列，更紧凑美观
+  - 编码选项改为网格布局：
+    - 第一行：自动检测文件编码
+    - 第二行：UTF-8编码 | Unicode LE编码
+    - 第三行：ANSI编码 | Unicode BE编码
+
+### 新功能
+- 文件关联设置
+  - 新增文件关联设置区域，支持将 .log 和 .log.1 文件与程序关联
+  - 默认勾选 .log 文件，可自由选择要关联的文件类型
+  - 设置关联后，双击对应文件可直接用本程序打开
+  - 支持查看当前关联状态（已关联显示标签）和移除关联
+  - 恢复默认按钮会重置勾选状态为仅 .log 文件
+
+### 技术改进
+- 新增 `file_association.rs` 模块（Windows）
+  - 使用 winreg 库操作 Windows 注册表
+  - 实现 `set_file_association`：设置单个文件关联
+  - 实现 `set_file_associations`：批量设置多个文件关联
+  - 实现 `remove_file_association`：移除单个文件关联
+  - 实现 `remove_file_associations`：批量移除多个文件关联
+  - 实现 `check_file_association`：检查单个关联状态
+  - 实现 `check_file_associations`：批量检查所有支持扩展名的关联状态
+  - 关联后自动刷新 Shell 图标缓存
+- 新增命令行参数处理
+  - main.rs 解析命令行参数获取初始文件路径
+  - 通过 `open-file-argument` 事件通知前端加载文件
+- 前端监听 `open-file-argument` 事件
+  - 自动加载通过命令行参数传入的文件
+
+## v1.9.8
+
+### UI 优化
+- 状态栏新增文件详情显示
+  - 文件打开完成后，状态栏左侧显示：文件名 | 文件大小 | 总条目数 | 加载用时
+  - 文件大小自动格式化（B/KB/MB/GB）
+  - 加载用时智能格式化（ms/s/m）
+
+### 技术改进
+- StatusBar 组件新增 `fileSize` 和 `fileName` 属性
+- logStore 新增 `loadStartTime`、`loadTime` 状态和 `getLoadTime()` 方法
+- +page.svelte 通过订阅 logStore 自动更新文件信息，支持所有加载方式（浏览、拖拽、FileBar）
+
+## v1.9.7
+
+### Bug 修复
+- 修复了 LogList 滚动加载失败的问题
+  - **问题原因1**：`onScroll` 方法加载新页面后没有调用 `notify()` 通知订阅者更新
+  - **问题原因2**：`getVisibleLogs()` 返回的日志没有按页码排序，导致 Map 迭代顺序不一致
+  - **解决方案**：
+    - 在 `onScroll` 加载新页面后调用 `notify()` 通知 UI 更新
+    - `getVisibleLogs()` 方法改为按页码排序后合并数据
+
+## v1.9.6
+
+### UI 优化
+- 移除右下角刷新按钮（原功能为清空内容，作用不大）
+- FileBar 新增打开/重载按钮
+  - 当地址框中的文件未打开时，显示"打开"按钮，点击可打开该文件
+  - 当地址框中的文件已打开时，按钮变为"重载"，点击可重新加载该文件
+  - 重载按钮使用蓝色高亮显示，便于识别
+
+### 技术改进
+- FileBar 组件新增 `isFileOpen()` 方法判断当前文件是否已打开
+- FileBar 组件新增 `handleOpenOrReload()` 方法处理打开/重载逻辑
+- 移除 +page.svelte 中的 `handleRefresh` 函数和 F5 快捷键绑定
+- StatusBar 组件移除 `onRefresh` 属性
+
+## v1.9.5
+
+### Bug 修复
+- 修复了选中日志后 LogDetail 内容区域空白的问题
+  - **问题原因**：`LogEntryView::from` 方法将 `raw` 字段设置为空字符串，而 `logStore.getLogById` 从缓存中获取的 entry 没有原始内容
+  - **解决方案**：
+    - 后端 `get_entry_detail` 命令现在会从原始文件读取 `raw` 内容
+    - 前端 `LogDetail` 组件直接调用 `getEntryDetail` API 获取完整日志信息
+  - 添加加载状态指示器，提升用户体验
+
 ## v1.9.4
 
 ### UI 优化

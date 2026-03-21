@@ -13,6 +13,9 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
 
+pub mod file_association;
+pub use file_association::*;
+
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 
 pub struct AppState {
@@ -297,6 +300,37 @@ pub async fn get_entries(
     eprintln!("get_entries: returned {} entries", entries.len());
     
     Ok(entries.iter().map(LogEntryView::from).collect())
+}
+
+#[tauri::command]
+pub async fn set_file_association(extension: String) -> Result<(), String> {
+    windows::set_file_association(&extension)
+}
+
+#[tauri::command]
+pub async fn set_file_associations(extensions: Vec<String>) -> Result<(), String> {
+    windows::set_file_associations(&extensions)
+}
+
+#[tauri::command]
+pub async fn remove_file_association(extension: String) -> Result<(), String> {
+    windows::remove_file_association(&extension)
+}
+
+#[tauri::command]
+pub async fn remove_file_associations(extensions: Vec<String>) -> Result<(), String> {
+    windows::remove_file_associations(&extensions)
+}
+
+#[tauri::command]
+pub async fn check_file_association() -> Result<FileAssociationStatus, String> {
+    let log = windows::check_file_association("log")?;
+    Ok(FileAssociationStatus { log })
+}
+
+#[tauri::command]
+pub async fn check_file_associations() -> Result<std::collections::HashMap<String, bool>, String> {
+    windows::check_file_associations()
 }
 
 #[tauri::command]

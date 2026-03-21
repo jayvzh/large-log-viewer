@@ -11,6 +11,7 @@
   import { logStore } from '$lib/stores/logStore';
   import { settingsStore } from '$lib/stores/settingsStore';
   import { onParseProgress, isTauriSync } from '$lib/api';
+  import { listen } from '@tauri-apps/api/event';
 
   let selectedLogId = $state<number | null>(null);
   let activeCategory = $state<string>('all');
@@ -21,15 +22,23 @@
   let statusMessage = $state('');
   let loadingProgress = $state(0);
   let loadingPhase = $state('');
-  let loadStartTime = $state(0);
   let loadTime = $state(0);
   let totalEntries = $state(0);
+  let fileSize = $state(0);
+  let fileName = $state('');
   let detailHeight = $state(180);
   let isResizing = $state(false);
 
   $effect(() => {
     const unsubscribe = logStore.subscribe(() => {
       logCount = logStore.getFilteredLogs().length;
+      const currentFile = logStore.getCurrentFile();
+      if (currentFile && !logStore.isLoading()) {
+        totalEntries = logStore.getStats().all;
+        fileSize = currentFile.size;
+        fileName = currentFile.name;
+        loadTime = logStore.getLoadTime();
+      }
     });
     return unsubscribe;
   });
@@ -44,6 +53,34 @@
 
   $effect(() => {
     settingsStore.loadSettings();
+  });
+
+  $effect(() => {
+    if (!isTauriSync()) return;
+    
+    let unlisten: (() => void) | null = null;
+    
+    listen<string>('open-file-argument', async (event) => {
+      const filePath = event.payload;
+      if (filePath) {
+        statusMessage = '正在加载文件...';
+        try {
+          await logStore.loadFile(filePath);
+          statusMessage = '';
+        } catch (err) {
+          console.error('Failed to load file from argument:', err);
+          statusMessage = '加载文件失败';
+        }
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
   });
 
   function handleLogSelect(id: number) {
@@ -63,24 +100,10 @@
     await logStore.setTimeFilter(filter);
   }
 
-  function handleRefresh() {
-    statusMessage = '正在刷新...';
-    selectedLogId = null;
-    logStore.clear();
-    totalEntries = 0;
-    loadTime = 0;
-    setTimeout(() => {
-      statusMessage = '';
-    }, 500);
-  }
-
   async function handleOpenFile() {
     statusMessage = '正在打开文件...';
-    loadStartTime = Date.now();
     try {
       await logStore.openFileDialog();
-      loadTime = Date.now() - loadStartTime;
-      totalEntries = logStore.getStats().all;
       statusMessage = '';
     } catch (err) {
       console.error('Failed to open file:', err);
@@ -113,14 +136,11 @@
       
       if (isValidFile) {
         statusMessage = '正在加载文件...';
-        loadStartTime = Date.now();
         try {
           if (isTauriSync()) {
             const path = (file as any).path;
             if (path) {
               await logStore.loadFile(path);
-              loadTime = Date.now() - loadStartTime;
-              totalEntries = logStore.getStats().all;
               statusMessage = '';
             } else {
               statusMessage = '无法获取文件路径';
@@ -140,10 +160,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'F5') {
-      e.preventDefault();
-      handleRefresh();
-    } else if (e.ctrlKey && e.key === 'o') {
+    if (e.ctrlKey && e.key === 'o') {
       e.preventDefault();
       handleOpenFile();
     } else if (e.ctrlKey && e.key === 'f') {
@@ -248,12 +265,13 @@
   </div>
   <StatusBar 
     logCount={logCount} 
-    onRefresh={handleRefresh}
     statusMessage={statusMessage}
     loadingProgress={loadingProgress}
     loadingPhase={loadingPhase}
     loadTime={loadTime}
     totalEntries={totalEntries}
+    fileSize={fileSize}
+    fileName={fileName}
   />
   
   {#if isDragging}

@@ -1,8 +1,8 @@
-# LogViewer 待办事项
+# LogViewer 待办事项（已完成，等待新任务）
 
 本文档记录 README.md "当前实现差距分析" 中未被本次 UI 改进方案覆盖的待办项目。
 
----
+***
 
 ## 待办事项清单
 
@@ -13,10 +13,12 @@
 **问题描述**：README 声称使用 rayon 多线程并行解析，但实际代码中 `parse_lines_parallel` 函数从未被调用。
 
 **代码位置**：
+
 - [parser/mod.rs:149-157](src-tauri/src/parser/mod.rs#L149-L157) - 定义了并行解析函数
 - [commands/mod.rs:100-133](src-tauri/src/commands/mod.rs#L100-L133) - 实际使用单线程循环
 
 **解决方案**：
+
 ```rust
 // 方案A：批量收集后并行解析
 let lines: Vec<_> = reader.read_lines_mmap()?.collect();
@@ -43,7 +45,7 @@ let entries: Vec<LogEntry> = receiver.par_iter()
 
 **预期效果**：4 核 CPU 解析速度提升 3-3.5 倍
 
----
+***
 
 #### 2. 修复零拷贝实现
 
@@ -52,6 +54,7 @@ let entries: Vec<LogEntry> = receiver.par_iter()
 **代码位置**：[reader/mod.rs:156](src-tauri/src/reader/mod.rs#L156)
 
 **当前代码**：
+
 ```rust
 let line = mmap[start..end].to_vec();  // ❌ 拷贝到堆内存
 Some(MmapLine {
@@ -61,6 +64,7 @@ Some(MmapLine {
 ```
 
 **解决方案**：
+
 ```rust
 pub struct MmapLine<'a> {
     pub data: &'a [u8],  // ✅ 零拷贝
@@ -85,7 +89,7 @@ impl<'a> Iterator for MmapLineIterator<'a> {
 
 **预期效果**：内存占用降低 40-60%
 
----
+***
 
 #### 3. 优化数据库查询
 
@@ -94,6 +98,7 @@ impl<'a> Iterator for MmapLineIterator<'a> {
 **代码位置**：[database/mod.rs:91-114](src-tauri/src/database/mod.rs#L91-L114)
 
 **当前代码**：
+
 ```rust
 for item in iter {
     if count >= offset + limit {  // ❌ 跳转到第100万条需遍历100万次
@@ -104,6 +109,7 @@ for item in iter {
 ```
 
 **解决方案**：
+
 ```rust
 // 添加二级索引
 // 主键: log:{file_id}:{entry_id}
@@ -118,7 +124,7 @@ pub async fn get_entries_fast(&self, file_id: u64, offset: u64, limit: u64) -> R
 
 **预期效果**：跳转到任意位置响应时间 < 50ms
 
----
+***
 
 #### 4. 实现全文搜索索引
 
@@ -127,6 +133,7 @@ pub async fn get_entries_fast(&self, file_id: u64, offset: u64, limit: u64) -> R
 **代码位置**：[commands/mod.rs:224-246](src-tauri/src/commands/mod.rs#L224-L246)
 
 **当前代码**：
+
 ```rust
 let entries = state.db.get_entries(file_id, 0, 10000).await?;  // ❌ 只搜索前10000条
 let filtered: Vec<_> = entries.iter().filter(|e| {
@@ -135,6 +142,7 @@ let filtered: Vec<_> = entries.iter().filter(|e| {
 ```
 
 **解决方案**：
+
 ```rust
 // 倒排索引结构
 // word:{file_id}:{word_hash} → RoaringBitmap (包含该词的日志ID)
@@ -162,7 +170,7 @@ pub async fn build_search_index(&self, file_id: u64, entries: &[LogEntry]) -> Re
 
 **预期效果**：百万级日志搜索响应 < 100ms
 
----
+***
 
 ### 第二优先级：功能增强（中等）
 
@@ -173,6 +181,7 @@ pub async fn build_search_index(&self, file_id: u64, entries: &[LogEntry]) -> Re
 **代码位置**：[logStore.ts:194-217](src/lib/stores/logStore.ts#L194-L217)
 
 **解决方案**：
+
 ```rust
 // 时间戳索引
 // time_idx:{file_id}:{timestamp} → RoaringBitmap
@@ -194,7 +203,7 @@ pub async fn filter_by_time(&self, file_id: u64, start: i64, end: i64) -> Result
 }
 ```
 
----
+***
 
 #### 6. 实现真正的分页加载
 
@@ -203,12 +212,14 @@ pub async fn filter_by_time(&self, file_id: u64, start: i64, end: i64) -> Result
 **代码位置**：[logStore.ts:135-138](src/lib/stores/logStore.ts#L135-L138)
 
 **当前代码**：
+
 ```typescript
 const entries = await getEntries(fileId, 0, 10000);  // ❌ 一次性加载
 this.logs = entries;
 ```
 
 **解决方案**：
+
 ```typescript
 class LogStore {
     private pageSize = 100;
@@ -238,13 +249,14 @@ class LogStore {
 }
 ```
 
----
+***
 
 #### 7. 后端过滤替代前端过滤
 
 **问题描述**：过滤逻辑在前端，应该移至后端减少数据传输。
 
 **解决方案**：
+
 ```rust
 #[tauri::command]
 pub async fn filter_logs(
@@ -287,7 +299,7 @@ pub async fn filter_logs(
 }
 ```
 
----
+***
 
 ### 第三优先级：健壮性增强（轻微）
 
@@ -296,6 +308,7 @@ pub async fn filter_logs(
 **问题描述**：无大文件保护机制。
 
 **解决方案**：
+
 ```rust
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024 * 1024; // 10GB
 
@@ -314,7 +327,7 @@ pub async fn open_file(path: String, state: State<'_, AppState>) -> Result<FileI
 }
 ```
 
----
+***
 
 ## 优先级排序
 
@@ -333,19 +346,19 @@ pub async fn open_file(path: String, state: State<'_, AppState>) -> Result<FileI
 └─────────────────────────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## 预期性能提升
 
-| 指标 | 当前实现 | 改进后 | 提升幅度 |
-|------|----------|--------|----------|
-| 1GB 文件解析时间 | ~45s | ~12s | 3.75x |
-| 内存占用（1GB文件） | ~1.5GB | ~600MB | 60%↓ |
-| 跳转到第100万条 | ~3s | <50ms | 60x |
-| 全文搜索响应 | N/A（只搜前1万条） | <100ms | ∞ |
-| 级别过滤响应 | ~500ms | <10ms | 50x |
+| 指标          | 当前实现        | 改进后     | 提升幅度  |
+| ----------- | ----------- | ------- | ----- |
+| 1GB 文件解析时间  | \~45s       | \~12s   | 3.75x |
+| 内存占用（1GB文件） | \~1.5GB     | \~600MB | 60%↓  |
+| 跳转到第100万条   | \~3s        | <50ms   | 60x   |
+| 全文搜索响应      | N/A（只搜前1万条） | <100ms  | ∞     |
+| 级别过滤响应      | \~500ms     | <10ms   | 50x   |
 
----
+***
 
 ## 建议实施顺序
 
@@ -353,11 +366,9 @@ pub async fn open_file(path: String, state: State<'_, AppState>) -> Result<FileI
    - 启用并行解析
    - 修复零拷贝实现
    - 优化数据库查询
-
 2. **第二阶段**（预计 4-6 天）
    - 实现全文搜索索引
    - 添加时间戳索引
-
 3. **第三阶段**（预计 3-5 天）
    - 实现分页加载
    - 后端过滤替代
