@@ -3,8 +3,10 @@ use crate::models::*;
 use crate::parser::LogParser;
 use crate::reader::LogFileReader;
 use roaring::RoaringBitmap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
 
@@ -93,7 +95,9 @@ pub async fn parse_log(
     
     let mut entry_count = 0u64;
     let mut batch = Vec::with_capacity(1000);
-    let mut last_progress = 0.0f32;
+    let mut last_update = Instant::now();
+    const UPDATE_INTERVAL_MS: u64 = 100;
+    const UPDATE_ENTRY_INTERVAL: u64 = 5000;
     
     let lines = reader.read_lines_mmap()?;
     
@@ -117,9 +121,14 @@ pub async fn parse_log(
             batch.clear();
         }
         
-        let progress = (line.offset as f32 / file_size as f32) * 100.0;
-        if progress - last_progress >= 1.0 {
-            last_progress = progress;
+        let now = Instant::now();
+        let elapsed = now.duration_since(last_update).as_millis() as u64;
+        
+        if elapsed >= UPDATE_INTERVAL_MS || entry_count % UPDATE_ENTRY_INTERVAL == 0 {
+            last_update = now;
+            let progress = (line.offset as f32 / file_size as f32) * 100.0;
+            
+            let phase = format!("解析中: 已处理 {} 条", entry_count);
             
             let _ = app.emit("parse_progress", ParseProgress {
                 file_id,
@@ -127,6 +136,7 @@ pub async fn parse_log(
                 processed_bytes: line.offset,
                 entries_parsed: entry_count,
                 percentage: progress,
+                phase,
                 is_complete: false,
             });
         }
@@ -155,6 +165,7 @@ pub async fn parse_log(
         processed_bytes: file_size,
         entries_parsed: entry_count,
         percentage: 100.0,
+        phase: "完成".to_string(),
         is_complete: true,
     });
     
@@ -249,4 +260,70 @@ pub async fn search(
 pub async fn get_current_file(state: State<'_, AppState>) -> Result<Option<FileInfo>, String> {
     let file = state.current_file.read().await;
     Ok(file.clone())
+}
+
+#[tauri::command]
+pub async fn clear_cache(state: State<'_, AppState>) -> Result<CacheInfo, String> {
+    let count = state.db.clear_cache().await?;
+    
+    let mut current_file = state.current_file.write().await;
+    *current_file = None;
+    
+    Ok(CacheInfo {
+        entries_cleared: count,
+        data_dir: Database::get_data_dir().to_string_lossy().to_string(),
+        cache_size: 0,
+    })
+}
+
+#[tauri::command]
+pub async fn get_cache_info() -> Result<CacheInfo, String> {
+    let data_dir = Database::get_data_dir();
+    let db_path = data_dir.join("logs.db");
+    
+    let size = if db_path.exists() {
+        std::fs::metadata(&db_path)
+            .map(|m| m.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    
+    Ok(CacheInfo {
+        entries_cleared: 0,
+        data_dir: data_dir.to_string_lossy().to_string(),
+        cache_size: size,
+    })
+}
+
+fn get_settings_path() -> PathBuf {
+    let data_dir = Database::get_data_dir();
+    data_dir.join("settings.json")
+}
+
+#[tauri::command]
+pub async fn get_settings() -> Result<AppSettings, String> {
+    let path = get_settings_path();
+    
+    if path.exists() {
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read settings: {}", e))?;
+        let settings: AppSettings = serde_json::from_str(&content)
+            .unwrap_or_default();
+        Ok(settings)
+    } else {
+        Ok(AppSettings::default())
+    }
+}
+
+#[tauri::command]
+pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
+    let path = get_settings_path();
+    let content = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    
+    fs::write(&path, content)
+        .map_err(|e| format!("Failed to write settings: {}", e))?;
+    
+    Ok(())
 }

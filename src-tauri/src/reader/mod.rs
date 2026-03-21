@@ -3,9 +3,48 @@ use std::fs::File;
 use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FileEncoding {
+    Auto,
+    Utf8,
+    Ansi,
+    Utf16LE,
+    Utf16BE,
+}
+
+impl FileEncoding {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "utf-8" => FileEncoding::Utf8,
+            "ansi" => FileEncoding::Ansi,
+            "utf-16le" => FileEncoding::Utf16LE,
+            "utf-16be" => FileEncoding::Utf16BE,
+            _ => FileEncoding::Auto,
+        }
+    }
+    
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FileEncoding::Auto => "auto",
+            FileEncoding::Utf8 => "utf-8",
+            FileEncoding::Ansi => "ansi",
+            FileEncoding::Utf16LE => "utf-16le",
+            FileEncoding::Utf16BE => "utf-16be",
+        }
+    }
+}
+
+impl Default for FileEncoding {
+    fn default() -> Self {
+        FileEncoding::Auto
+    }
+}
+
 pub struct LogFileReader {
     file_path: PathBuf,
     file_size: u64,
+    #[allow(dead_code)]
+    encoding: FileEncoding,
 }
 
 impl LogFileReader {
@@ -16,11 +55,55 @@ impl LogFileReader {
         Ok(Self {
             file_path: path,
             file_size: metadata.len(),
+            encoding: FileEncoding::Auto,
+        })
+    }
+    
+    pub fn with_encoding(path: PathBuf, encoding: FileEncoding) -> Result<Self, String> {
+        let metadata = std::fs::metadata(&path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+        
+        Ok(Self {
+            file_path: path,
+            file_size: metadata.len(),
+            encoding,
         })
     }
     
     pub fn file_size(&self) -> u64 {
         self.file_size
+    }
+    
+    pub fn detect_encoding(data: &[u8]) -> FileEncoding {
+        if data.len() >= 3 && &data[0..3] == b"\xEF\xBB\xBF" {
+            return FileEncoding::Utf8;
+        }
+        if data.len() >= 2 {
+            if &data[0..2] == b"\xFF\xFE" {
+                return FileEncoding::Utf16LE;
+            }
+            if &data[0..2] == b"\xFE\xFF" {
+                return FileEncoding::Utf16BE;
+            }
+        }
+        FileEncoding::Utf8
+    }
+    
+    pub fn decode_line(data: &[u8], encoding: FileEncoding) -> String {
+        match encoding {
+            FileEncoding::Utf8 | FileEncoding::Auto => {
+                String::from_utf8_lossy(data).into_owned()
+            }
+            FileEncoding::Utf16LE => {
+                encoding_rs::UTF_16LE.decode(data).0.into_owned()
+            }
+            FileEncoding::Utf16BE => {
+                encoding_rs::UTF_16BE.decode(data).0.into_owned()
+            }
+            FileEncoding::Ansi => {
+                encoding_rs::WINDOWS_1252.decode(data).0.into_owned()
+            }
+        }
     }
     
     pub fn read_lines(&self) -> Result<LineIterator, String> {

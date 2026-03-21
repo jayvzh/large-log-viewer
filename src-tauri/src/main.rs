@@ -19,6 +19,10 @@ fn main() {
             log_viewer_lib::commands::filter_by_level,
             log_viewer_lib::commands::search,
             log_viewer_lib::commands::get_current_file,
+            log_viewer_lib::commands::clear_cache,
+            log_viewer_lib::commands::get_cache_info,
+            log_viewer_lib::commands::get_settings,
+            log_viewer_lib::commands::save_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

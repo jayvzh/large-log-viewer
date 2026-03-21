@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 pub struct Database {
     db: Arc<RwLock<Db>>,
-    data_dir: PathBuf,
+    _data_dir: PathBuf,
 }
 
 impl Database {
@@ -21,13 +21,27 @@ impl Database {
             .map_err(|e| format!("Failed to create data directory: {}", e))?;
         
         let db_path = data_dir.join("logs.db");
-        let db = sled::open(db_path)
+        let db = sled::open(&db_path)
             .map_err(|e| format!("Failed to open database: {}", e))?;
         
         Ok(Self {
             db: Arc::new(RwLock::new(db)),
-            data_dir,
+            _data_dir: data_dir,
         })
+    }
+    
+    pub fn get_data_dir() -> PathBuf {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("LogViewer")
+            .join("data")
+    }
+    
+    pub async fn clear_cache(&self) -> Result<u64, String> {
+        let db = self.db.write().await;
+        let count = db.len() as u64;
+        let _ = db.clear();
+        Ok(count)
     }
     
     pub async fn store_entry(&self, entry: &LogEntry) -> Result<(), String> {

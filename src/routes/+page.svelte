@@ -1,22 +1,47 @@
 <script lang="ts">
   import TitleBar from '$lib/components/TitleBar.svelte';
+  import FileBar from '$lib/components/FileBar.svelte';
   import ControlBar from '$lib/components/ControlBar.svelte';
   import CategoryTabs from '$lib/components/CategoryTabs.svelte';
   import LogList from '$lib/components/LogList.svelte';
   import LogDetail from '$lib/components/LogDetail.svelte';
   import StatusBar from '$lib/components/StatusBar.svelte';
+  import SettingsModal from '$lib/components/SettingsModal.svelte';
+  import HelpModal from '$lib/components/HelpModal.svelte';
   import { logStore } from '$lib/stores/logStore';
+  import { settingsStore } from '$lib/stores/settingsStore';
+  import { onParseProgress } from '$lib/api';
 
   let selectedLogId = $state<number | null>(null);
   let activeCategory = $state<string>('all');
   let logCount = $state<number>(0);
   let isDragging = $state(false);
+  let showSettings = $state(false);
+  let showHelp = $state(false);
+  let statusMessage = $state('');
+  let loadingProgress = $state(0);
+  let loadingPhase = $state('');
+  let loadStartTime = $state(0);
+  let loadTime = $state(0);
+  let totalEntries = $state(0);
 
   $effect(() => {
     const unsubscribe = logStore.subscribe(() => {
       logCount = logStore.getFilteredLogs().length;
     });
     return unsubscribe;
+  });
+
+  $effect(() => {
+    const unsubscribe = onParseProgress((progress) => {
+      loadingProgress = progress.percentage;
+      loadingPhase = progress.phase;
+    });
+    return unsubscribe;
+  });
+
+  $effect(() => {
+    settingsStore.loadSettings();
   });
 
   function handleLogSelect(id: number) {
@@ -28,8 +53,8 @@
     logStore.setActiveCategory(category);
   }
 
-  function handleSearch(query: string) {
-    logStore.setSearchQuery(query);
+  function handleSearch(query: string, scope: string, mode: string) {
+    logStore.setSearchQuery(query, scope, mode);
   }
 
   function handleTimeFilter(filter: string) {
@@ -37,15 +62,27 @@
   }
 
   function handleRefresh() {
+    statusMessage = '正在刷新...';
     selectedLogId = null;
     logStore.clear();
+    totalEntries = 0;
+    loadTime = 0;
+    setTimeout(() => {
+      statusMessage = '';
+    }, 500);
   }
 
   async function handleOpenFile() {
+    statusMessage = '正在打开文件...';
+    loadStartTime = Date.now();
     try {
       await logStore.openFileDialog();
+      loadTime = Date.now() - loadStartTime;
+      totalEntries = logStore.getStats().all;
+      statusMessage = '';
     } catch (err) {
       console.error('Failed to open file:', err);
+      statusMessage = '打开文件失败';
     }
   }
 
@@ -67,11 +104,17 @@
     if (files && files.length > 0) {
       const file = files[0];
       if (file.name.endsWith('.log') || file.name.endsWith('.txt') || file.name.endsWith('.json')) {
+        statusMessage = '正在加载文件...';
+        loadStartTime = Date.now();
         try {
           const path = (file as any).path || file.name;
           await logStore.loadFile(path);
+          loadTime = Date.now() - loadStartTime;
+          totalEntries = logStore.getStats().all;
+          statusMessage = '';
         } catch (err) {
           console.error('Failed to load file:', err);
+          statusMessage = '加载文件失败';
         }
       }
     }
@@ -93,9 +136,25 @@
     } else if (e.key === 'Escape') {
       activeCategory = 'all';
       logStore.setActiveCategory('all');
-      logStore.setSearchQuery('');
+      logStore.setSearchQuery('', 'all', 'fuzzy');
       logStore.setTimeFilter('all');
     }
+  }
+
+  function handleOpenSettings() {
+    showSettings = true;
+  }
+
+  function handleCloseSettings() {
+    showSettings = false;
+  }
+
+  function handleOpenHelp() {
+    showHelp = true;
+  }
+
+  function handleCloseHelp() {
+    showHelp = false;
   }
 </script>
 
@@ -113,7 +172,11 @@
   ondragleave={handleDragLeave}
   ondrop={handleDrop}
 >
-  <TitleBar />
+  <TitleBar 
+    onOpenSettings={handleOpenSettings}
+    onOpenHelp={handleOpenHelp}
+  />
+  <FileBar />
   <ControlBar 
     onSearch={handleSearch} 
     onTimeFilter={handleTimeFilter} 
@@ -135,7 +198,12 @@
   </div>
   <StatusBar 
     logCount={logCount} 
-    onRefresh={handleRefresh} 
+    onRefresh={handleRefresh}
+    statusMessage={statusMessage}
+    loadingProgress={loadingProgress}
+    loadingPhase={loadingPhase}
+    loadTime={loadTime}
+    totalEntries={totalEntries}
   />
   
   {#if isDragging}
@@ -151,6 +219,16 @@
     </div>
   {/if}
 </div>
+
+<SettingsModal 
+  isOpen={showSettings} 
+  onClose={handleCloseSettings} 
+/>
+
+<HelpModal 
+  isOpen={showHelp} 
+  onClose={handleCloseHelp} 
+/>
 
 <style>
   :root {
@@ -169,9 +247,19 @@
     --color-trace: #606060;
     --color-other: #cccccc;
     --header-height: 40px;
+    --filebar-height: 36px;
     --control-height: 50px;
     --tabs-height: 40px;
     --status-height: 30px;
+  }
+
+  :root[data-theme="light"] {
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f3f3f3;
+    --color-bg-tertiary: #e5e5e5;
+    --color-text-primary: #333333;
+    --color-text-secondary: #666666;
+    --color-border: #d4d4d4;
   }
 
   * {

@@ -144,5 +144,29 @@ pub struct ParseProgress {
     pub processed_bytes: u64,
     pub entries_parsed: u64,
     pub percentage: f32,
+    pub phase: String,
     pub is_complete: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppSettings {
+    pub theme: String,
+    pub encoding: String,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            theme: "dark".to_string(),
+            encoding: "auto".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheInfo {
+    pub entries_cleared: u64,
+    pub data_dir: String,
+    #[serde(default)]
+    pub cache_size: u64,
 }
