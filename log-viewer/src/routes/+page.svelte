@@ -108,6 +108,7 @@
 <div 
   class="app-container"
   class:dragging={isDragging}
+  role="application"
   ondragover={handleDragOver}
   ondragleave={handleDragLeave}
   ondrop={handleDrop}
@@ -177,15 +178,6 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-  }
-
-  html, body {
-    height: 100%;
-    overflow: hidden;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    font-size: 13px;
-    color: var(--color-text-primary);
-    background-color: var(--color-bg-primary);
   }
 
   .app-container {
