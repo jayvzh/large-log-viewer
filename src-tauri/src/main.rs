@@ -1,9 +1,10 @@
-#![cfg_attr(not(target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use log_viewer_lib::commands::AppState;
 use log_viewer_lib::Database;
 use std::env;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
+use tauri_plugin_single_instance::init;
 
 fn main() {
     let db = Database::new().expect("Failed to initialize database");
@@ -19,6 +20,20 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(init(|app, args, _| {
+            if args.len() > 1 {
+                let file_path = args[1].clone();
+                let app_handle = app.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = app_handle.emit("open-file-argument", file_path);
+                });
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.unminimize();
+            }
+        }))
         .manage(AppState::new(db))
         .invoke_handler(tauri::generate_handler![
             log_viewer_lib::commands::open_file,
