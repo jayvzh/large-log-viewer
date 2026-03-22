@@ -8,6 +8,8 @@
   - 移除 ControlBar 的「搜索范围」选择器，简化为全局搜索（搜索全部字段）
   - 搜索按钮改为图标按钮，界面更简洁
   - FilterPanel 重命名为「高级筛选」，定位更清晰
+  - 高级筛选面板默认隐藏，通过 ControlBar 的筛选按钮展开/折叠
+  - 筛选按钮显示当前筛选条件数量的徽章
   - 减少搜索和筛选功能的重叠，降低用户学习成本
   - 文件：[ControlBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/ControlBar.svelte)、[FilterPanel.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FilterPanel.svelte)、[logStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/logStore.ts)、[+page.svelte](file:///e:/Code/github/large-log-viewer/src/routes/+page.svelte)
 

@@ -33,6 +33,7 @@
   let extraFields = $state<string[]>([]);
   let filterConditions = $state<FilterCondition[]>([]);
   let filterCombineMode = $state<'and' | 'or'>('and');
+  let showAdvancedFilter = $state(false);
 
   $effect(() => {
     const unsubscribe = logStore.subscribe(() => {
@@ -137,6 +138,10 @@
   function handleClearAllFilterConditions() {
     templateStore.clearFilterConditions();
     logStore.refreshFilters();
+  }
+
+  function handleToggleAdvancedFilter() {
+    showAdvancedFilter = !showAdvancedFilter;
   }
 
   async function handleOpenFile() {
@@ -278,17 +283,22 @@
   <ControlBar 
     onSearch={handleSearch} 
     onTimeFilter={handleTimeFilter} 
+    showAdvancedFilter={showAdvancedFilter}
+    onToggleAdvancedFilter={handleToggleAdvancedFilter}
+    advancedFilterCount={filterConditions.length}
   />
-  <FilterPanel 
-    fields={extraFields}
-    conditions={filterConditions}
-    combineMode={filterCombineMode}
-    onAdd={handleAddFilterCondition}
-    onRemove={handleRemoveFilterCondition}
-    onUpdate={handleUpdateFilterCondition}
-    onCombineModeChange={handleFilterCombineModeChange}
-    onClearAll={handleClearAllFilterConditions}
-  />
+  {#if showAdvancedFilter}
+    <FilterPanel 
+      fields={extraFields}
+      conditions={filterConditions}
+      combineMode={filterCombineMode}
+      onAdd={handleAddFilterCondition}
+      onRemove={handleRemoveFilterCondition}
+      onUpdate={handleUpdateFilterCondition}
+      onCombineModeChange={handleFilterCombineModeChange}
+      onClearAll={handleClearAllFilterConditions}
+    />
+  {/if}
   <CategoryTabs 
     activeCategory={activeCategory} 
     onCategoryChange={handleCategoryChange} 
