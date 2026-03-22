@@ -39,6 +39,17 @@
   - 问题：选择模板后，templateStore 的 currentTemplate 未更新
   - 修复：在 FileBar.selectTemplate 中调用 `templateStore.setCurrentTemplate()`
 
+- **修复 Nginx Access Log 时间戳解析**：
+  - 问题：Nginx 时间格式 `03/Feb/2026:15:36:05 +0800` 无法被正确解析
+  - 修复：添加 `%d/%b/%Y:%H:%M:%S %z` 格式支持
+
+- **修复自动模板检测未生效**：
+  - 问题：打开文件时未自动检测最佳匹配模板
+  - 根本原因：缓存判断逻辑 `cached_name.as_deref() == template_name` 当两者都是 `None` 时返回 `true`，导致直接返回空的缓存解析器，跳过了自动检测
+  - 修复：修改缓存判断逻辑，仅在两者都是 `Some` 且相等时才使用缓存
+  - `parse_log` 命令现在会自动检测并返回检测到的模板名称
+  - 前端收到检测结果后自动设置 templateStore
+
 ### Changed
 
 - **FilterPanel 位置调整**：

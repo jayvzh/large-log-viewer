@@ -266,3 +266,10 @@ pub struct ExtraFilterCondition {
     pub operator: String,
     pub value: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParseResult {
+    pub entry_count: u64,
+    pub detected_template: Option<String>,
+}

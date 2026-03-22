@@ -605,7 +605,7 @@ impl Database {
                     if let Ok((key, bitmap_data)) = item {
                         let key_str = String::from_utf8_lossy(&key);
                         if let Some(hash_str) = key_str.rsplit(':').next() {
-                            if let Ok(hash) = u64::from_str_radix(hash_str, 16) {
+                            if let Ok(_hash) = u64::from_str_radix(hash_str, 16) {
                                 let bitmap = RoaringBitmap::deserialize_from(&bitmap_data[..])
                                     .map_err(|e| format!("Failed to deserialize extra bitmap: {}", e))?;
                                 

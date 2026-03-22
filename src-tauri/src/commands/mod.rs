@@ -41,12 +41,14 @@ impl AppState {
         }
     }
     
-    async fn get_or_create_parser(&self, template_name: Option<&str>) -> Result<Option<Arc<LogTemplateParser>>, String> {
+    async fn get_or_create_parser(&self, template_name: Option<&str>, lines_for_detection: Option<&[&str]>) -> Result<Option<Arc<LogTemplateParser>>, String> {
         let cached_name = self.cached_template_name.read().await.clone();
         
-        if cached_name.as_deref() == template_name {
-            let parser = self.template_parser.read().await;
-            return Ok(parser.clone());
+        if let (Some(cached), Some(name)) = (&cached_name, template_name) {
+            if cached == name {
+                let parser = self.template_parser.read().await;
+                return Ok(parser.clone());
+            }
         }
         
         let parser = if let Some(name) = template_name {
@@ -56,6 +58,34 @@ impl AppState {
                 Some(Arc::new(LogTemplateParser::new(vec![t.clone()])?))
             } else {
                 return Err(format!("Template not found: {}", name));
+            }
+        } else if let Some(lines) = lines_for_detection {
+            let templates = self.template_store.get_all_templates().await?;
+            if !templates.is_empty() {
+                let detector = LogTemplateParser::new(templates)?;
+                let results = detector.detect_best_template(lines);
+                if let Some(best) = results.first() {
+                    if best.match_rate > 0.5 {
+                        let templates = self.template_store.get_all_templates().await?;
+                        let template = templates.iter().find(|t| &t.name == &best.template_name);
+                        if let Some(t) = template {
+                            let parser = Arc::new(LogTemplateParser::new(vec![t.clone()])?);
+                            {
+                                let mut cached_name = self.cached_template_name.write().await;
+                                *cached_name = Some(t.name.clone());
+                            }
+                            return Ok(Some(parser));
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
             }
         } else {
             None
@@ -139,7 +169,7 @@ pub async fn parse_log(
     encoding: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
-) -> Result<u64, String> {
+) -> Result<ParseResult, String> {
     let path = {
         let current_file = state.current_file.read().await;
         let file_info = current_file.as_ref()
@@ -163,21 +193,6 @@ pub async fn parse_log(
     let reader = LogFileReader::with_encoding(path, file_encoding)?;
     let file_size = reader.file_size();
     
-    let template_parser = state.get_or_create_parser(template_name.as_deref()).await?;
-    let parser = LogParser::new(file_id);
-    
-    let mut level_bitmaps: [RoaringBitmap; 7] = Default::default();
-    for i in 0..7 {
-        level_bitmaps[i] = RoaringBitmap::new();
-    }
-    
-    let mut word_index: HashMap<u64, RoaringBitmap> = HashMap::new();
-    
-    let entry_count = AtomicU64::new(0);
-    let mut last_update = Instant::now();
-    const UPDATE_INTERVAL_MS: u64 = 100;
-    const BATCH_SIZE: usize = 10000;
-    
     let mut reader = reader.read_lines_mmap()?;
     
     let _ = app.emit("parse_progress", ParseProgress {
@@ -195,6 +210,28 @@ pub async fn parse_log(
         all_lines.push((line.data.to_vec(), line.line_number, line.offset));
     }
     let total_lines = all_lines.len();
+    
+    let detection_lines: Vec<String> = all_lines
+        .iter()
+        .take(100)
+        .map(|(data, _, _)| LogFileReader::decode_line(data, file_encoding))
+        .collect();
+    let detection_refs: Vec<&str> = detection_lines.iter().map(|s| s.as_str()).collect();
+    
+    let template_parser = state.get_or_create_parser(template_name.as_deref(), Some(&detection_refs)).await?;
+    let parser = LogParser::new(file_id);
+    
+    let mut level_bitmaps: [RoaringBitmap; 7] = Default::default();
+    for i in 0..7 {
+        level_bitmaps[i] = RoaringBitmap::new();
+    }
+    
+    let mut word_index: HashMap<u64, RoaringBitmap> = HashMap::new();
+    
+    let entry_count = AtomicU64::new(0);
+    let mut last_update = Instant::now();
+    const UPDATE_INTERVAL_MS: u64 = 100;
+    const BATCH_SIZE: usize = 10000;
     
     for chunk in all_lines.chunks(BATCH_SIZE) {
         let chunk_lines: Vec<(String, u64, u64)> = chunk
@@ -228,6 +265,14 @@ pub async fn parse_log(
                         } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.3f") {
                             Some(dt.and_utc().timestamp_millis())
                         } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
+                            Some(dt.and_utc().timestamp_millis())
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S") {
+                            Some(dt.and_utc().timestamp_millis())
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.f%:z") {
+                            Some(dt.and_utc().timestamp_millis())
+                        } else if let Ok(dt) = chrono::DateTime::parse_from_str(&s, "%d/%b/%Y:%H:%M:%S %z") {
+                            Some(dt.timestamp_millis())
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%d/%b/%Y:%H:%M:%S") {
                             Some(dt.and_utc().timestamp_millis())
                         } else {
                             None
@@ -386,13 +431,18 @@ pub async fn parse_log(
         is_complete: true,
     });
     
+    let detected_template = state.cached_template_name.read().await.clone();
+    
     let mut current_file = state.current_file.write().await;
     if let Some(ref mut info) = *current_file {
         info.entry_count = final_count;
     }
     drop(current_file);
     
-    Ok(final_count)
+    Ok(ParseResult {
+        entry_count: final_count,
+        detected_template,
+    })
 }
 
 #[tauri::command]

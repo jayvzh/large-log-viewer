@@ -260,6 +260,7 @@ mod template_tests {
             has_level: true,
             has_timestamp: true,
             has_source: false,
+            priority: 0,
         };
         
         assert_eq!(template.name, "Test Template");
@@ -304,6 +305,7 @@ mod template_tests {
             has_level: true,
             has_timestamp: true,
             has_source: false,
+            priority: 0,
         }];
         
         let parser = LogTemplateParser::new(templates).unwrap();
