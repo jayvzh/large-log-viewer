@@ -199,9 +199,16 @@ pub struct MmapReader {
 
 impl MmapReader {
     fn new(mmap: Mmap) -> Self {
+        let mut pos = 0;
+        
+        // Skip UTF-8 BOM if present
+        if mmap.len() >= 3 && &mmap[0..3] == b"\xEF\xBB\xBF" {
+            pos = 3;
+        }
+        
         Self {
             mmap,
-            pos: 0,
+            pos,
             line_number: 0,
         }
     }

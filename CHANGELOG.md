@@ -1,12 +1,106 @@
 # 变更日志
 
-## [Unreleased]
+## v0.2.3
+
+### Added
+
+- 实现日志解析模板系统
+  - **后端核心功能**：
+    - 新增核心数据结构：`LogTemplate`、`LogEvent`、`TemplateTestResult`、`DetectResult`
+    - 创建 `LogTemplateParser` 模板解析器，支持自定义正则表达式模板
+    - 内置 5 种常用日志格式模板（Standard Format、Bracketed Level、Level First、Date First、Full Bracketed）
+    - 实现模板存储功能（`store_template`、`get_template`、`get_all_templates`、`delete_template`）
+    - 添加 Tauri 命令：`get_templates`、`create_template`、`update_template`、`delete_template`、`test_template`、`detect_template`、`export_templates`、`import_templates`
+    - 支持模板测试和自动检测最佳匹配模板功能
+    - 支持命名捕获组字段别名映射（time→timestamp, msg→message, lvl→level 等）
+    - `parse_log` 命令支持可选的 `template_name` 参数，使用指定模板解析日志
+  - **前端功能**：
+    - 新增模板类型定义文件 [src/lib/types/template.ts](file:///e:/Code/github/large-log-viewer/src/lib/types/template.ts)
+    - 新增模板状态管理 [src/lib/stores/templateStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/templateStore.ts)
+    - 新增模板管理弹窗组件 [TemplateManagerModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateManagerModal.svelte)
+    - 新增模板编辑弹窗组件 [TemplateEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateEditorModal.svelte)
+- 新增 [TODO.md](file:///e:/Code/github/large-log-viewer/TODO.md) 文档，记录已完成功能和待改进事项
+  - 重构 [FileBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FileBar.svelte) 添加模板选择下拉菜单
+  - 支持实时预览模板解析结果
+  - 支持模板导入/导出功能
+  - logStore 支持选中模板状态，解析时传递模板参数
+  - **测试**：
+    - 新增 11 个模板相关单元测试（共 24 个测试全部通过）
+- **后端支持模板字段元数据**：
+  - `LogTemplate` 结构新增字段：`extra_fields`、`has_level`、`has_timestamp`、`has_source`
+  - `LogEntry` 结构新增字段：`extra`（额外字段）、`is_parsed`（是否成功解析）
+  - `LogEntryView` 结构新增字段：`extra`、`is_parsed`
+  - `LogTemplateParser` 新增 `extract_fields_from_pattern` 方法，从正则表达式提取字段元数据
+  - 内置模板设置正确的字段元数据标志
+  - `parse_log` 命令支持存储 extra 字段和设置 is\_parsed 标志
+- **前端动态字段支持**：
+  - 新增 [FilterPanel.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FilterPanel.svelte) 字段驱动筛选组件
+    - 支持多条件筛选（等于、包含、正则、大于、小于）
+    - 支持 AND/OR 组合模式
+    - 动态字段选择（核心字段 + 模板额外字段）
+  - templateStore 新增状态管理：
+    - `currentFields`：当前模板的额外字段列表
+    - `hasLevel`：当前模板是否包含级别字段
+    - `filterConditions`：筛选条件列表
+    - `filterCombineMode`：筛选组合模式
+    - `showUnparsed`：是否显示未解析日志
+  - logStore 新增功能：
+    - `applyFieldFilters`：字段驱动筛选逻辑
+    - `setShowUnparsed`/`getShowUnparsed`：未解析日志显示控制
+    - `LogEntry` 接口新增 `extra` 和 `isParsed` 字段
 
 ### Changed
-- 将日志字段 "记录者" (logger) 重命名为 "来源" (source)
+
+- **完善文件编码支持功能**：
+  - 后端 `parse_log` 和 `detect_template` 命令新增 `encoding` 参数
+  - 使用 `LogFileReader::decode_line()` 替代 `String::from_utf8_lossy()` 进行正确的编码解码
+  - 支持 UTF-8、UTF-16 LE/BE、ANSI 编码
+  - 文件：[src-tauri/src/commands/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/commands/mod.rs)
+- **重构 FileBar 组件布局**：
+  - 将编码选择和模板选择移至 FileBar 右侧
+  - 添加"编码:"和"模板:"标签前缀
+  - 编码选择支持：自动检测、UTF-8、UTF-16 LE、UTF-16 BE、ANSI
+  - 优化按钮行为：浏览按钮加载时保持不变（仅禁用），打开按钮加载时变为中止按钮
+  - 文件：[src/lib/components/FileBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FileBar.svelte)
+- **从设置页面移除编码设置**：
+  - 编码设置已移至 FileBar，设置页面仅保留主题和文件关联
+  - 文件：[src/lib/components/SettingsModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/SettingsModal.svelte)
+- **修复 UTF-8 BOM 字符导致日志解析失败的问题**：
+  - 问题：带有 UTF-8 BOM (`EF BB BF`) 的日志文件，第一行无法被正则表达式匹配，被识别为 `OTHER / Unknown`
+  - 修复：在 `MmapReader::new()` 中检测并跳过 UTF-8 BOM 字符
+  - 文件：[src-tauri/src/reader/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/reader/mod.rs)
+- 将日志字段"记录者" (logger) 重命名为"来源" (source)
   - 前端组件：LogList.svelte、LogDetail.svelte、ControlBar.svelte
   - 前端状态管理：logStore.ts
   - 后端模型：models/mod.rs (LogEntry、LogEntryView)
   - 后端解析器：parser/mod.rs (正则表达式捕获组名称)
   - 后端命令和数据库：commands/mod.rs、database/mod.rs
   - 文档：README.md
+- **重构 LogList 组件支持动态列**：
+  - 定义 `ColumnConfig` 接口管理列配置
+  - 根据 `hasLevel` 条件显示/隐藏级别列
+  - 根据 `extraFields` 动态添加额外字段列
+  - 表格支持横向滚动（overflow-x: auto）
+  - 未解析日志添加特殊样式（灰色斜体）
+- **重构 CategoryTabs 组件**：
+  - 新增 `hasLevel` prop 控制级别过滤面板显示
+  - 当模板无级别字段时显示简化版（仅显示总数）
+- **重构 ControlBar 组件**：
+  - 搜索范围改为动态字段选择
+  - 新增"显示未解析"开关
+  - 支持模板额外字段作为搜索范围选项
+  - 修复搜索范围选项：添加"级别"选项，将"消息"改为"内容"
+  - 移除"原始内容"选项（"全部范围"已包含原始内容，功能重复）
+- **修复搜索功能字段映射**：
+  - logStore 的 `applyClientSideSearch` 现在支持所有核心字段（级别、来源、内容）
+  - 支持动态额外字段（extra）的搜索
+  - "全部范围"搜索包含原始内容（raw）及所有解析字段
+- **统一字段命名**：
+  - 将 `summary` 字段重命名为 `message`，统一前后端命名
+  - 后端：LogEntry.summary → LogEntry.message，summary\_str() → message\_str()
+  - 前端：LogEntry.summary → LogEntry.message
+  - LogList 列配置：content key → message key
+  - 正则捕获组：summary → message
+  - 现在所有层级统一使用 `message` 表示日志消息内容
+  - 修复 LogList 的 getColumnStyle 函数中遗漏的 'content' → 'message'
+

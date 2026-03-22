@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -53,9 +54,13 @@ pub struct LogEntry {
     pub timestamp: i64,
     pub level: LogLevel,
     pub source: SmallVec<[u8; 64]>,
-    pub summary: SmallVec<[u8; 128]>,
+    pub message: SmallVec<[u8; 128]>,
     pub raw_offset: u64,
     pub raw_length: u32,
+    #[serde(default)]
+    pub extra: HashMap<String, String>,
+    #[serde(default)]
+    pub is_parsed: bool,
 }
 
 impl LogEntry {
@@ -66,7 +71,7 @@ impl LogEntry {
         timestamp: i64,
         level: LogLevel,
         source: &str,
-        summary: &str,
+        message: &str,
         raw_offset: u64,
         raw_length: u32,
     ) -> Self {
@@ -77,9 +82,39 @@ impl LogEntry {
             timestamp,
             level,
             source: SmallVec::from_slice(source.as_bytes()),
-            summary: SmallVec::from_slice(summary.as_bytes()),
+            message: SmallVec::from_slice(message.as_bytes()),
             raw_offset,
             raw_length,
+            extra: HashMap::new(),
+            is_parsed: false,
+        }
+    }
+    
+    pub fn with_extra(
+        id: u64,
+        file_id: u64,
+        line_number: u64,
+        timestamp: i64,
+        level: LogLevel,
+        source: &str,
+        message: &str,
+        raw_offset: u64,
+        raw_length: u32,
+        extra: HashMap<String, String>,
+        is_parsed: bool,
+    ) -> Self {
+        Self {
+            id,
+            file_id,
+            line_number,
+            timestamp,
+            level,
+            source: SmallVec::from_slice(source.as_bytes()),
+            message: SmallVec::from_slice(message.as_bytes()),
+            raw_offset,
+            raw_length,
+            extra,
+            is_parsed,
         }
     }
     
@@ -87,8 +122,8 @@ impl LogEntry {
         std::str::from_utf8(&self.source).unwrap_or("Unknown")
     }
     
-    pub fn summary_str(&self) -> &str {
-        std::str::from_utf8(&self.summary).unwrap_or("")
+    pub fn message_str(&self) -> &str {
+        std::str::from_utf8(&self.message).unwrap_or("")
     }
 }
 
@@ -98,8 +133,12 @@ pub struct LogEntryView {
     pub timestamp: i64,
     pub level: String,
     pub source: String,
-    pub summary: String,
+    pub message: String,
     pub raw: String,
+    #[serde(default)]
+    pub extra: HashMap<String, String>,
+    #[serde(default)]
+    pub is_parsed: bool,
 }
 
 impl From<&LogEntry> for LogEntryView {
@@ -109,8 +148,10 @@ impl From<&LogEntry> for LogEntryView {
             timestamp: entry.timestamp,
             level: entry.level.as_str().to_string(),
             source: entry.source_str().to_string(),
-            summary: entry.summary_str().to_string(),
+            message: entry.message_str().to_string(),
             raw: String::new(),
+            extra: entry.extra.clone(),
+            is_parsed: entry.is_parsed,
         }
     }
 }
@@ -172,4 +213,46 @@ pub struct CacheInfo {
     pub data_dir: String,
     #[serde(default)]
     pub cache_size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogTemplate {
+    pub name: String,
+    pub pattern: String,
+    pub field_mapping: HashMap<String, String>,
+    pub is_builtin: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+    #[serde(default)]
+    pub extra_fields: Vec<String>,
+    #[serde(default)]
+    pub has_level: bool,
+    #[serde(default)]
+    pub has_timestamp: bool,
+    #[serde(default)]
+    pub has_source: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LogEvent {
+    pub timestamp: Option<String>,
+    pub level: Option<String>,
+    pub source: Option<String>,
+    pub message: String,
+    pub extra: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateTestResult {
+    pub success: bool,
+    pub event: Option<LogEvent>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectResult {
+    pub template_name: String,
+    pub match_rate: f32,
+    pub matched_count: u32,
+    pub total_count: u32,
 }

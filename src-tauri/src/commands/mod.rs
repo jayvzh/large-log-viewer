@@ -2,6 +2,7 @@ use crate::database::Database;
 use crate::database::tokenize;
 use crate::models::*;
 use crate::parser::LogParser;
+use crate::parser::LogTemplateParser;
 use crate::reader::LogFileReader;
 use roaring::RoaringBitmap;
 use std::collections::HashMap;
@@ -88,10 +89,11 @@ pub async fn open_file(
 #[tauri::command]
 pub async fn parse_log(
     file_id: u64,
+    template_name: Option<String>,
+    encoding: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<u64, String> {
-    // 获取文件路径，立即释放读锁
     let path = {
         let current_file = state.current_file.read().await;
         let file_info = current_file.as_ref()
@@ -109,8 +111,21 @@ pub async fn parse_log(
         }
     }
     
-    let reader = LogFileReader::new(path)?;
+    let encoding_str = encoding.unwrap_or_else(|| settings.encoding);
+    let file_encoding = crate::reader::FileEncoding::from_str(&encoding_str);
+    
+    let reader = LogFileReader::with_encoding(path, file_encoding)?;
     let file_size = reader.file_size();
+    
+    // 根据是否提供模板名称选择解析器
+    let template_parser = if let Some(ref name) = template_name {
+        let templates = state.db.get_all_templates().await?;
+        let template = templates.iter().find(|t| &t.name == name)
+            .ok_or_else(|| format!("Template not found: {}", name))?;
+        Some(LogTemplateParser::new(vec![template.clone()])?)
+    } else {
+        None
+    };
     let parser = LogParser::new(file_id);
     
     let mut level_bitmaps: [RoaringBitmap; 7] = Default::default();
@@ -147,7 +162,7 @@ pub async fn parse_log(
         let chunk_lines: Vec<(String, u64, u64)> = chunk
             .iter()
             .map(|(data, line_number, offset)| {
-                let line_str = String::from_utf8_lossy(data).into_owned();
+                let line_str = LogFileReader::decode_line(data, file_encoding);
                 (line_str, *line_number, *offset)
             })
             .collect();
@@ -157,7 +172,55 @@ pub async fn parse_log(
             .map(|(s, ln, off)| (s.as_str(), *ln, *off))
             .collect();
         
-        let parsed_entries = parser.parse_lines_parallel(&chunk_refs);
+        // 根据是否使用模板解析器选择解析方式
+        let parsed_entries: Vec<LogEntry> = if let Some(ref tp) = template_parser {
+            chunk_refs.iter().map(|(line, line_number, offset)| {
+                let event = tp.parse_line(line);
+                
+                let has_timestamp = event.timestamp.is_some();
+                let has_level = event.level.is_some();
+                let has_extra = !event.extra.is_empty();
+                let is_parsed = has_timestamp || has_level || has_extra;
+                
+                let timestamp = event.timestamp
+                    .and_then(|ts| {
+                        let s = ts.replace(',', ".");
+                        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%.3f") {
+                            Some(dt.and_utc().timestamp_millis())
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.3f") {
+                            Some(dt.and_utc().timestamp_millis())
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
+                            Some(dt.and_utc().timestamp_millis())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(0);
+                
+                let level = event.level
+                    .map(|l| LogLevel::from_str(&l))
+                    .unwrap_or(LogLevel::Other);
+                
+                let source = event.source.unwrap_or_default();
+                let summary = if event.message.is_empty() { line.to_string() } else { event.message.clone() };
+                
+                LogEntry::with_extra(
+                    *line_number,
+                    file_id,
+                    *line_number,
+                    timestamp,
+                    level,
+                    &source,
+                    &summary,
+                    *offset,
+                    line.len() as u32,
+                    event.extra,
+                    is_parsed,
+                )
+            }).collect()
+        } else {
+            parser.parse_lines_parallel(&chunk_refs)
+        };
         
         let mut batch = Vec::with_capacity(BATCH_SIZE);
         let mut local_bitmaps: [RoaringBitmap; 7] = Default::default();
@@ -177,7 +240,7 @@ pub async fn parse_log(
                 local_bitmaps[level_idx].insert(current_id as u32);
             }
             
-            let text = format!("{} {}", entry.source_str(), entry.summary_str());
+            let text = format!("{} {}", entry.source_str(), entry.message_str());
             let words = tokenize(&text);
             for word in words {
                 use std::hash::{Hash, Hasher};
@@ -300,6 +363,109 @@ pub async fn get_entries(
     eprintln!("get_entries: returned {} entries", entries.len());
     
     Ok(entries.iter().map(LogEntryView::from).collect())
+}
+
+#[tauri::command]
+pub async fn get_templates(state: State<'_, AppState>) -> Result<Vec<LogTemplate>, String> {
+    state.db.get_all_templates().await
+}
+
+#[tauri::command]
+pub async fn create_template(
+    template: LogTemplate,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if template.is_builtin {
+        return Err("Cannot create builtin template".to_string());
+    }
+    state.db.store_template(&template).await
+}
+
+#[tauri::command]
+pub async fn update_template(
+    template: LogTemplate,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if template.is_builtin {
+        return Err("Cannot update builtin template".to_string());
+    }
+    state.db.store_template(&template).await
+}
+
+#[tauri::command]
+pub async fn delete_template(
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if let Some(t) = state.db.get_template(&name).await? {
+        if t.is_builtin {
+            return Err("Cannot delete builtin template".to_string());
+        }
+    }
+    state.db.delete_template(&name).await
+}
+
+#[tauri::command]
+pub async fn test_template(
+    pattern: String,
+    test_line: String,
+) -> Result<TemplateTestResult, String> {
+    Ok(LogTemplateParser::test_pattern(&pattern, &test_line))
+}
+
+#[tauri::command]
+pub async fn detect_template(
+    file_path: String,
+    encoding: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<DetectResult>, String> {
+    let templates = state.db.get_all_templates().await?;
+    let parser = LogTemplateParser::new(templates)?;
+    
+    let settings = get_settings().await.unwrap_or_default();
+    let encoding_str = encoding.unwrap_or_else(|| settings.encoding);
+    let file_encoding = crate::reader::FileEncoding::from_str(&encoding_str);
+    
+    let reader = LogFileReader::with_encoding(PathBuf::from(&file_path), file_encoding)?;
+    let mut lines: Vec<String> = Vec::new();
+    let mut reader = reader.read_lines_mmap()?;
+    
+    while let Some(line) = reader.next_line() {
+        if lines.len() >= 100 {
+            break;
+        }
+        lines.push(LogFileReader::decode_line(&line.data, file_encoding));
+    }
+    
+    let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+    Ok(parser.detect_best_template(&refs))
+}
+
+#[tauri::command]
+pub async fn export_templates(state: State<'_, AppState>) -> Result<String, String> {
+    let templates = state.db.get_all_templates().await?;
+    serde_json::to_string_pretty(&templates)
+        .map_err(|e| format!("Failed to export templates: {}", e))
+}
+
+#[tauri::command]
+pub async fn import_templates(
+    json: String,
+    state: State<'_, AppState>,
+) -> Result<u32, String> {
+    let templates: Vec<LogTemplate> = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse templates: {}", e))?;
+    
+    let mut count = 0u32;
+    for mut t in templates {
+        t.is_builtin = false;
+        t.created_at = chrono::Utc::now().timestamp_millis();
+        t.updated_at = t.created_at;
+        state.db.store_template(&t).await?;
+        count += 1;
+    }
+    
+    Ok(count)
 }
 
 #[tauri::command]

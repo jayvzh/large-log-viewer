@@ -56,6 +56,14 @@ fn main() {
             log_viewer_lib::commands::remove_file_associations,
             log_viewer_lib::commands::check_file_association,
             log_viewer_lib::commands::check_file_associations,
+            log_viewer_lib::commands::get_templates,
+            log_viewer_lib::commands::create_template,
+            log_viewer_lib::commands::update_template,
+            log_viewer_lib::commands::delete_template,
+            log_viewer_lib::commands::test_template,
+            log_viewer_lib::commands::detect_template,
+            log_viewer_lib::commands::export_templates,
+            log_viewer_lib::commands::import_templates,
         ])
         .setup(move |app| {
             if let Some(file_path) = initial_file {

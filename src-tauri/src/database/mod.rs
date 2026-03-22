@@ -1,4 +1,5 @@
 use crate::models::*;
+use crate::parser::LogTemplateParser;
 use roaring::RoaringBitmap;
 use sled::Db;
 use std::collections::HashMap;
@@ -204,7 +205,7 @@ impl Database {
         let mut word_index: HashMap<u64, RoaringBitmap> = HashMap::new();
         
         for entry in entries {
-            let text = format!("{} {}", entry.source_str(), entry.summary_str());
+            let text = format!("{} {}", entry.source_str(), entry.message_str());
             let words = tokenize(&text);
             for word in words {
                 let hash = hash_word(&word);
@@ -424,5 +425,63 @@ impl Database {
             }
         }
         Ok(entries)
+    }
+    
+    pub async fn store_template(&self, template: &LogTemplate) -> Result<(), String> {
+        let db = self.db.read().await;
+        let key = format!("template:{}", template.name);
+        let value = serde_json::to_vec(template)
+            .map_err(|e| format!("Failed to serialize template: {}", e))?;
+        
+        db.insert(key.as_bytes(), value)
+            .map_err(|e| format!("Failed to store template: {}", e))?;
+        
+        Ok(())
+    }
+
+    pub async fn get_template(&self, name: &str) -> Result<Option<LogTemplate>, String> {
+        let db = self.db.read().await;
+        let key = format!("template:{}", name);
+        
+        let value = db.get(key.as_bytes())
+            .map_err(|e| format!("Failed to get template: {}", e))?;
+        
+        match value {
+            Some(v) => {
+                let template: LogTemplate = serde_json::from_slice(&v)
+                    .map_err(|e| format!("Failed to deserialize template: {}", e))?;
+                Ok(Some(template))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub async fn get_all_templates(&self) -> Result<Vec<LogTemplate>, String> {
+        let db = self.db.read().await;
+        let mut templates = Vec::new();
+        
+        let iter = db.scan_prefix(b"template:");
+        for item in iter {
+            if let Ok((_, value)) = item {
+                if let Ok(template) = serde_json::from_slice::<LogTemplate>(&value) {
+                    templates.push(template);
+                }
+            }
+        }
+        
+        let mut builtin = LogTemplateParser::get_builtin_templates();
+        templates.append(&mut builtin);
+        
+        Ok(templates)
+    }
+
+    pub async fn delete_template(&self, name: &str) -> Result<(), String> {
+        let db = self.db.read().await;
+        let key = format!("template:{}", name);
+        
+        db.remove(key.as_bytes())
+            .map_err(|e| format!("Failed to delete template: {}", e))?;
+        
+        Ok(())
     }
 }

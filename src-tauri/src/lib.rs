@@ -49,7 +49,7 @@ mod tests {
         
         assert_eq!(entry.level, LogLevel::Info);
         assert_eq!(entry.source_str(), "com.example.Service");
-        assert!(entry.summary_str().contains("用户登录成功"));
+        assert!(entry.message_str().contains("用户登录成功"));
     }
 
     #[test]
@@ -60,7 +60,7 @@ mod tests {
         
         assert_eq!(entry.level, LogLevel::Error);
         assert_eq!(entry.source_str(), "com.example.Dao");
-        assert!(entry.summary_str().contains("数据库连接失败"));
+        assert!(entry.message_str().contains("数据库连接失败"));
     }
 
     #[test]
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(entry.timestamp, 1696168245000);
         assert_eq!(entry.level, LogLevel::Info);
         assert_eq!(entry.source_str(), "com.example.Test");
-        assert_eq!(entry.summary_str(), "测试消息");
+        assert_eq!(entry.message_str(), "测试消息");
         assert_eq!(entry.raw_offset, 0);
         assert_eq!(entry.raw_length, 50);
     }
@@ -185,5 +185,154 @@ mod tests {
         assert_eq!(parsed.file_id, progress.file_id);
         assert_eq!(parsed.total_bytes, progress.total_bytes);
         assert_eq!(parsed.percentage, progress.percentage);
+    }
+}
+
+#[cfg(test)]
+mod template_tests {
+    use crate::models::*;
+    use crate::parser::LogTemplateParser;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_log_template_creation() {
+        let template = LogTemplate {
+            name: "Test Template".to_string(),
+            pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2}) (?P<level>\w+) (?P<message>.+)$".to_string(),
+            field_mapping: HashMap::new(),
+            is_builtin: false,
+            created_at: 0,
+            updated_at: 0,
+            extra_fields: Vec::new(),
+            has_level: true,
+            has_timestamp: true,
+            has_source: false,
+        };
+        
+        assert_eq!(template.name, "Test Template");
+        assert!(!template.is_builtin);
+    }
+
+    #[test]
+    fn test_template_parser_standard() {
+        let templates = LogTemplateParser::get_builtin_templates();
+        let parser = LogTemplateParser::new(templates).unwrap();
+        
+        let line = "2023-10-01 12:30:45.123 INFO  com.example.Service - Test message";
+        let event = parser.parse_line(line);
+        
+        assert!(event.timestamp.is_some());
+        assert_eq!(event.level, Some("INFO".to_string()));
+        assert_eq!(event.source, Some("com.example.Service".to_string()));
+        assert!(event.message.contains("Test message"));
+    }
+
+    #[test]
+    fn test_template_parser_field_aliases() {
+        let templates = LogTemplateParser::get_builtin_templates();
+        let parser = LogTemplateParser::new(templates).unwrap();
+        
+        let line = "2023-10-01 12:30:45.123 INFO  com.example.Service - Test message";
+        let event = parser.parse_line(line);
+        
+        assert!(event.timestamp.is_some());
+    }
+
+    #[test]
+    fn test_template_parser_extra_fields() {
+        let templates = vec![LogTemplate {
+            name: "Extra Fields Test".to_string(),
+            pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2}) \[(?P<thread_id>\d+)\] (?P<level>\w+) (?P<message>.+)$".to_string(),
+            field_mapping: HashMap::new(),
+            is_builtin: false,
+            created_at: 0,
+            updated_at: 0,
+            extra_fields: vec!["thread_id".to_string()],
+            has_level: true,
+            has_timestamp: true,
+            has_source: false,
+        }];
+        
+        let parser = LogTemplateParser::new(templates).unwrap();
+        let line = "2023-10-01 [12345] INFO Test message";
+        let event = parser.parse_line(line);
+        
+        assert_eq!(event.extra.get("thread_id"), Some(&"12345".to_string()));
+    }
+
+    #[test]
+    fn test_template_parser_no_match() {
+        let templates = LogTemplateParser::get_builtin_templates();
+        let parser = LogTemplateParser::new(templates).unwrap();
+        
+        let line = "random text without format";
+        let event = parser.parse_line(line);
+        
+        assert!(event.timestamp.is_none());
+        assert!(event.level.is_none());
+        assert_eq!(event.message, line);
+    }
+
+    #[test]
+    fn test_detect_best_template() {
+        let templates = LogTemplateParser::get_builtin_templates();
+        let parser = LogTemplateParser::new(templates).unwrap();
+        
+        let lines = vec![
+            "2023-10-01 12:30:45.123 INFO  com.example.Service - Message 1",
+            "2023-10-01 12:30:46.123 ERROR com.example.Dao - Message 2",
+            "2023-10-01 12:30:47.123 WARN  com.example.Util - Message 3",
+        ];
+        
+        let refs: Vec<&str> = lines.iter().map(|s| s.as_ref()).collect();
+        let results = parser.detect_best_template(&refs);
+        
+        assert!(!results.is_empty());
+        assert_eq!(results[0].template_name, "Standard Format");
+        assert!(results[0].match_rate > 0.9);
+    }
+
+    #[test]
+    fn test_test_pattern_success() {
+        let pattern = r"^(?P<timestamp>\d{4}-\d{2}-\d{2}) (?P<level>\w+) (?P<message>.+)$";
+        let test_line = "2023-10-01 INFO Test message";
+        
+        let result = LogTemplateParser::test_pattern(pattern, test_line);
+        
+        assert!(result.success);
+        assert!(result.event.is_some());
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn test_test_pattern_invalid_regex() {
+        let pattern = r"^(?P<timestamp";
+        let test_line = "2023-10-01 INFO Test message";
+        
+        let result = LogTemplateParser::test_pattern(pattern, test_line);
+        
+        assert!(!result.success);
+        assert!(result.error.is_some());
+    }
+
+    #[test]
+    fn test_test_pattern_no_match() {
+        let pattern = r"^(?P<timestamp>\d{4}-\d{2}-\d{2}) (?P<level>\w+)$";
+        let test_line = "random text";
+        
+        let result = LogTemplateParser::test_pattern(pattern, test_line);
+        
+        assert!(!result.success);
+        assert!(result.error.is_some());
+    }
+
+    #[test]
+    fn test_builtin_templates_count() {
+        let templates = LogTemplateParser::get_builtin_templates();
+        assert_eq!(templates.len(), 5);
+        
+        for t in &templates {
+            assert!(t.is_builtin);
+        }
     }
 }
