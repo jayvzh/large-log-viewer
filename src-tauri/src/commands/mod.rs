@@ -25,6 +25,8 @@ pub struct AppState {
     template_store: Arc<TemplateStore>,
     current_file: RwLock<Option<FileInfo>>,
     next_file_id: RwLock<u64>,
+    template_parser: RwLock<Option<Arc<LogTemplateParser>>>,
+    cached_template_name: RwLock<Option<String>>,
 }
 
 impl AppState {
@@ -34,7 +36,48 @@ impl AppState {
             template_store: Arc::new(TemplateStore::new()),
             current_file: RwLock::new(None),
             next_file_id: RwLock::new(1),
+            template_parser: RwLock::new(None),
+            cached_template_name: RwLock::new(None),
         }
+    }
+    
+    async fn get_or_create_parser(&self, template_name: Option<&str>) -> Result<Option<Arc<LogTemplateParser>>, String> {
+        let cached_name = self.cached_template_name.read().await.clone();
+        
+        if cached_name.as_deref() == template_name {
+            let parser = self.template_parser.read().await;
+            return Ok(parser.clone());
+        }
+        
+        let parser = if let Some(name) = template_name {
+            let templates = self.template_store.get_all_templates().await?;
+            let template = templates.iter().find(|t| &t.name == name);
+            if let Some(t) = template {
+                Some(Arc::new(LogTemplateParser::new(vec![t.clone()])?))
+            } else {
+                return Err(format!("Template not found: {}", name));
+            }
+        } else {
+            None
+        };
+        
+        {
+            let mut cached_parser = self.template_parser.write().await;
+            *cached_parser = parser.clone();
+        }
+        {
+            let mut cached_name = self.cached_template_name.write().await;
+            *cached_name = template_name.map(|s| s.to_string());
+        }
+        
+        Ok(parser)
+    }
+    
+    async fn clear_parser_cache(&self) {
+        let mut parser = self.template_parser.write().await;
+        *parser = None;
+        let mut name = self.cached_template_name.write().await;
+        *name = None;
     }
 }
 
@@ -120,15 +163,7 @@ pub async fn parse_log(
     let reader = LogFileReader::with_encoding(path, file_encoding)?;
     let file_size = reader.file_size();
     
-    // 根据是否提供模板名称选择解析器
-    let template_parser = if let Some(ref name) = template_name {
-        let templates = state.template_store.get_all_templates().await?;
-        let template = templates.iter().find(|t| &t.name == name)
-            .ok_or_else(|| format!("Template not found: {}", name))?;
-        Some(LogTemplateParser::new(vec![template.clone()])?)
-    } else {
-        None
-    };
+    let template_parser = state.get_or_create_parser(template_name.as_deref()).await?;
     let parser = LogParser::new(file_id);
     
     let mut level_bitmaps: [RoaringBitmap; 7] = Default::default();
@@ -233,6 +268,7 @@ pub async fn parse_log(
         
         let mut local_word_index: HashMap<u64, RoaringBitmap> = HashMap::new();
         let mut time_index_batch: Vec<(i64, u64)> = Vec::new();
+        let mut extra_field_indices: HashMap<String, HashMap<String, RoaringBitmap>> = HashMap::new();
         
         for mut entry in parsed_entries {
             let current_id = entry_count.fetch_add(1, Ordering::SeqCst);
@@ -260,6 +296,15 @@ pub async fn parse_log(
                 time_index_batch.push((entry.timestamp, current_id));
             }
             
+            for (field_name, field_value) in &entry.extra {
+                extra_field_indices
+                    .entry(field_name.clone())
+                    .or_default()
+                    .entry(field_value.clone())
+                    .or_default()
+                    .insert(current_id as u32);
+            }
+            
             batch.push(entry);
         }
         
@@ -267,6 +312,10 @@ pub async fn parse_log(
         
         if !time_index_batch.is_empty() {
             state.db.store_time_index_batch(file_id, &time_index_batch).await?;
+        }
+        
+        for (field_name, value_index) in &extra_field_indices {
+            state.db.store_extra_field_index_batch(file_id, field_name, value_index).await?;
         }
         
         for i in 0..7 {
@@ -457,6 +506,7 @@ pub async fn update_template(
     if template.is_builtin {
         return Err("Cannot update builtin template".to_string());
     }
+    state.clear_parser_cache().await;
     state.template_store.add_template(&template).await
 }
 
@@ -470,6 +520,7 @@ pub async fn delete_template(
             return Err("Cannot delete builtin template".to_string());
         }
     }
+    state.clear_parser_cache().await;
     state.template_store.remove_template(&name).await
 }
 
@@ -740,6 +791,8 @@ pub async fn filter_logs(
     end_time: Option<i64>,
     offset: u64,
     limit: u64,
+    extra_conditions: Option<Vec<ExtraFilterCondition>>,
+    extra_combine_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<LogEntryView>, String> {
     let mut result_bitmap: Option<RoaringBitmap> = None;
@@ -765,6 +818,21 @@ pub async fn filter_logs(
             Some(b) => Some(b & search_bitmap),
             None => Some(search_bitmap),
         };
+    }
+    
+    if let Some(conditions) = extra_conditions {
+        if !conditions.is_empty() {
+            let combine_mode = extra_combine_mode.unwrap_or_else(|| "and".to_string());
+            let conditions_tuple: Vec<(String, String, String)> = conditions
+                .iter()
+                .map(|c| (c.field.clone(), c.operator.clone(), c.value.clone()))
+                .collect();
+            let extra_bitmap = state.db.filter_by_extra_conditions(file_id, &conditions_tuple, &combine_mode).await?;
+            result_bitmap = match result_bitmap {
+                Some(b) => Some(b & extra_bitmap),
+                None => Some(extra_bitmap),
+            };
+        }
     }
     
     let entries = match result_bitmap {

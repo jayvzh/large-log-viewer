@@ -36,6 +36,15 @@
 - [x] 移除调试日志（清理 `eprintln!` 输出）
 - [x] 时间过滤确认（正确使用后端时间索引）
 
+### v0.4.0 新增
+- [x] Extra 字段索引系统（RoaringBitmap 索引，支持高效过滤）
+- [x] 模板优先级支持（priority 字段，按优先级匹配）
+- [x] 模板解析器缓存（避免重复编译正则）
+- [x] FilterPanel 增强（折叠/展开、清除按钮）
+- [x] 修复 FilterPanel 不显示问题（使用 extra_fields 替代 field_mapping）
+- [x] 修复 LogList 动态列不显示问题
+- [x] Extra 字段后端过滤（利用索引高效查询）
+
 ## 待改进 📋
 
 ### 性能优化（中等优先级）

@@ -232,6 +232,8 @@ pub struct LogTemplate {
     pub has_timestamp: bool,
     #[serde(default)]
     pub has_source: bool,
+    #[serde(default)]
+    pub priority: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -256,4 +258,11 @@ pub struct DetectResult {
     pub match_rate: f32,
     pub matched_count: u32,
     pub total_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtraFilterCondition {
+    pub field: String,
+    pub operator: String,
+    pub value: String,
 }

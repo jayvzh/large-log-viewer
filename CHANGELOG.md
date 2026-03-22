@@ -1,6 +1,71 @@
 # 变更日志
 
-## v0.3.1
+## v0.4.0
+
+### Added
+
+- **Extra 字段索引系统**：
+  - 新增后端 Extra 字段索引，支持高效过滤
+  - 索引键格式：`extra_idx:{file_id}:{field_name}:{value_hash}` → RoaringBitmap
+  - 支持等于、包含操作符使用索引快速查询
+  - 正则、大于、小于操作符回退到全量扫描
+
+- **模板优先级支持**：
+  - LogTemplate 新增 `priority` 字段
+  - 模板按优先级从高到低匹配
+  - 模板编辑器支持设置优先级
+
+- **模板解析器缓存**：
+  - AppState 缓存 LogTemplateParser 实例
+  - 避免重复编译正则表达式
+  - 模板变更时自动清除缓存
+
+- **FilterPanel 增强**：
+  - 添加折叠/展开功能
+  - 折叠状态持久化到 localStorage
+  - 添加"清除所有筛选"按钮
+
+### Fixed
+
+- **修复 FilterPanel 不显示问题**：
+  - 问题：FilterPanel 依赖未实现的 `field_mapping` 字段，导致大多数情况下不显示
+  - 修复：改用模板的 `extra_fields` 字段
+
+- **修复 LogList 动态列不显示问题**：
+  - 问题：LogList 的动态列依赖 `extraFields`，但该值始终为空
+  - 修复：修复 templateStore 的字段提取逻辑
+
+- **修复选择模板时未更新 templateStore**：
+  - 问题：选择模板后，templateStore 的 currentTemplate 未更新
+  - 修复：在 FileBar.selectTemplate 中调用 `templateStore.setCurrentTemplate()`
+
+### Changed
+
+- **FilterPanel 位置调整**：
+  - 将 FilterPanel 移至 CategoryTabs 上方
+  - 文件：[src/routes/+page.svelte](file:///e:/Code/github/large-log-viewer/src/routes/+page.svelte)
+
+- **FilterPanel 显示逻辑**：
+  - 移除条件渲染，FilterPanel 始终显示
+  - 当无 extra 字段时，仅显示核心字段筛选选项
+
+- **Extra 字段过滤优化**：
+  - Extra 字段过滤从客户端移至后端
+  - 利用索引实现高效过滤
+
+## v0.3.3
+
+### Added
+
+- **模板系统分析文档**：
+  - 新增 [templatesys.md](file:///e:/Code/github/large-log-viewer/templatesys.md) 文档
+  - 详细说明模板系统的架构、数据流向、语法规范
+  - 分析数据处理流程：原始日志 → LogEvent → LogEntry → 数据库存储
+  - 说明 Extra 字段提取机制和存储方式
+  - 指出当前方案的缺点（架构、性能、功能、用户体验四个层面）
+  - 提出短期、中期、长期改进方向建议
+
+## v0.3.2
 
 ### Fixed
 
@@ -9,6 +74,22 @@
   - 原因：`MmapReader::next_line` 只处理 `\n` 作为换行符，`\r` 字符留在行尾导致正则表达式无法匹配
   - 修复：在 `LogFileReader::decode_line()` 中去除行尾的 `\r` 字符
   - 文件：[src-tauri/src/reader/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/reader/mod.rs)
+
+### Changed
+
+- **重构内置模板系统**：
+  - 删除原有的5个通用模板（Standard Format、Bracketed Level、Level First、Date First、Full Bracketed）
+  - 新增3个针对特定日志格式的内置模板：
+    - **Linux Syslog**：Linux系统全局日志格式（rsyslog），支持主机名字段
+    - **Linux Auth Log**：Linux系统认证日志格式（sshd等），支持主机名字段
+    - **Nginx Access Log**：Nginx访问日志格式（combined格式），支持IP、请求、状态码等字段
+  - 文件：[src-tauri/src/parser/template.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/parser/template.rs)
+
+- **优化模板存储路径**：
+  - 开发模式（`pnpm tauri dev`）下模板存储路径改为 `src-tauri/data/templates.json`
+  - 生产模式下模板存储路径仍为 `{exe_dir}/data/templates.json`
+  - 通过 `CARGO_MANIFEST_DIR` 环境变量自动检测开发模式
+  - 文件：[src-tauri/src/template_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/template_store.rs)
 
 ## v0.3.0
 

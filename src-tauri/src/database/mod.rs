@@ -490,4 +490,200 @@ impl Database {
         
         Ok(())
     }
+    
+    fn hash_extra_value(value: &str) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+    
+    pub async fn store_extra_field_index(
+        &self, 
+        file_id: u64, 
+        field_name: &str, 
+        value: &str, 
+        entry_id: u64
+    ) -> Result<(), String> {
+        let db = self.db.read().await;
+        let value_hash = Self::hash_extra_value(value);
+        let key = format!("extra_idx:{}:{}:{:016x}", file_id, field_name, value_hash);
+        
+        let mut bitmap = match db.get(key.as_bytes()) {
+            Ok(Some(v)) => RoaringBitmap::deserialize_from(&v[..])
+                .map_err(|e| format!("Failed to deserialize extra bitmap: {}", e))?,
+            Ok(None) => RoaringBitmap::new(),
+            Err(e) => return Err(format!("Failed to get extra bitmap: {}", e)),
+        };
+        
+        bitmap.insert(entry_id as u32);
+        
+        let mut buf = Vec::new();
+        bitmap.serialize_into(&mut buf)
+            .map_err(|e| format!("Failed to serialize extra bitmap: {}", e))?;
+        
+        db.insert(key.as_bytes(), buf)
+            .map_err(|e| format!("Failed to store extra index: {}", e))?;
+        
+        Ok(())
+    }
+    
+    pub async fn store_extra_field_index_batch(
+        &self,
+        file_id: u64,
+        field_name: &str,
+        index_data: &HashMap<String, RoaringBitmap>
+    ) -> Result<(), String> {
+        let db = self.db.read().await;
+        
+        for (value, bitmap) in index_data {
+            let value_hash = Self::hash_extra_value(value);
+            let key = format!("extra_idx:{}:{}:{:016x}", file_id, field_name, value_hash);
+            
+            let mut merged_bitmap = match db.get(key.as_bytes()) {
+                Ok(Some(v)) => RoaringBitmap::deserialize_from(&v[..])
+                    .map_err(|e| format!("Failed to deserialize extra bitmap: {}", e))?,
+                Ok(None) => RoaringBitmap::new(),
+                Err(e) => return Err(format!("Failed to get extra bitmap: {}", e)),
+            };
+            
+            merged_bitmap |= bitmap;
+            
+            let mut buf = Vec::new();
+            merged_bitmap.serialize_into(&mut buf)
+                .map_err(|e| format!("Failed to serialize extra bitmap: {}", e))?;
+            
+            db.insert(key.as_bytes(), buf)
+                .map_err(|e| format!("Failed to store extra index: {}", e))?;
+        }
+        
+        Ok(())
+    }
+    
+    pub async fn get_extra_field_bitmap(
+        &self,
+        file_id: u64,
+        field_name: &str,
+        value: &str
+    ) -> Result<Option<RoaringBitmap>, String> {
+        let db = self.db.read().await;
+        let value_hash = Self::hash_extra_value(value);
+        let key = format!("extra_idx:{}:{}:{:016x}", file_id, field_name, value_hash);
+        
+        let result = db.get(key.as_bytes())
+            .map_err(|e| format!("Failed to get extra bitmap: {}", e))?;
+        
+        match result {
+            Some(v) => {
+                let bitmap = RoaringBitmap::deserialize_from(&v[..])
+                    .map_err(|e| format!("Failed to deserialize extra bitmap: {}", e))?;
+                Ok(Some(bitmap))
+            }
+            None => Ok(None),
+        }
+    }
+    
+    pub async fn filter_by_extra_field(
+        &self,
+        file_id: u64,
+        field_name: &str,
+        operator: &str,
+        value: &str
+    ) -> Result<RoaringBitmap, String> {
+        match operator {
+            "equals" => {
+                self.get_extra_field_bitmap(file_id, field_name, value)
+                    .await
+                    .map(|b| b.unwrap_or_default())
+            }
+            "contains" => {
+                let db = self.db.read().await;
+                let prefix = format!("extra_idx:{}:{}:", file_id, field_name);
+                let mut result = RoaringBitmap::new();
+                
+                let iter = db.scan_prefix(prefix.as_bytes());
+                for item in iter {
+                    if let Ok((key, bitmap_data)) = item {
+                        let key_str = String::from_utf8_lossy(&key);
+                        if let Some(hash_str) = key_str.rsplit(':').next() {
+                            if let Ok(hash) = u64::from_str_radix(hash_str, 16) {
+                                let bitmap = RoaringBitmap::deserialize_from(&bitmap_data[..])
+                                    .map_err(|e| format!("Failed to deserialize extra bitmap: {}", e))?;
+                                
+                                let value_lower = value.to_lowercase();
+                                for id in bitmap.iter() {
+                                    if let Some(entry) = self.get_entry(file_id, id as u64).await? {
+                                        if let Some(field_value) = entry.extra.get(field_name) {
+                                            if field_value.to_lowercase().contains(&value_lower) {
+                                                result.insert(id);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Ok(result)
+            }
+            _ => {
+                let db = self.db.read().await;
+                let prefix = format!("log:{}:", file_id);
+                let mut result = RoaringBitmap::new();
+                
+                let iter = db.scan_prefix(prefix.as_bytes());
+                for item in iter {
+                    if let Ok((_, value_data)) = item {
+                        if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value_data) {
+                            if let Some(field_value) = entry.extra.get(field_name) {
+                                let matches = match operator {
+                                    "regex" => {
+                                        match regex::Regex::new(value) {
+                                            Ok(re) => re.is_match(field_value),
+                                            Err(_) => false,
+                                        }
+                                    }
+                                    "gt" => field_value.as_str() > value,
+                                    "lt" => field_value.as_str() < value,
+                                    _ => false,
+                                };
+                                if matches {
+                                    result.insert(entry.id as u32);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Ok(result)
+            }
+        }
+    }
+    
+    pub async fn filter_by_extra_conditions(
+        &self,
+        file_id: u64,
+        conditions: &[(String, String, String)],
+        combine_mode: &str
+    ) -> Result<RoaringBitmap, String> {
+        if conditions.is_empty() {
+            return Ok(RoaringBitmap::new());
+        }
+        
+        let mut result: Option<RoaringBitmap> = None;
+        
+        for (field, operator, value) in conditions {
+            let bitmap = self.filter_by_extra_field(file_id, field, operator, value).await?;
+            
+            result = match result {
+                Some(prev) => match combine_mode {
+                    "and" => Some(prev & bitmap),
+                    _ => Some(prev | bitmap),
+                },
+                None => Some(bitmap),
+            };
+        }
+        
+        Ok(result.unwrap_or_default())
+    }
 }

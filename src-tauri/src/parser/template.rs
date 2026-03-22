@@ -7,7 +7,9 @@ pub struct LogTemplateParser {
 }
 
 impl LogTemplateParser {
-    pub fn new(templates: Vec<LogTemplate>) -> Result<Self, String> {
+    pub fn new(mut templates: Vec<LogTemplate>) -> Result<Self, String> {
+        templates.sort_by(|a, b| b.priority.cmp(&a.priority));
+        
         let mut compiled = Vec::new();
         for t in &templates {
             let re = Regex::new(&t.pattern)
@@ -81,64 +83,43 @@ impl LogTemplateParser {
         let now = chrono::Utc::now().timestamp_millis();
         vec![
             LogTemplate {
-                name: "Standard Format".to_string(),
-                pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{3})\s+(?P<level>\w+)\s+(?P<source>\S+)\s+-\s+(?P<message>.+)$".to_string(),
+                name: "Linux Syslog".to_string(),
+                pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<source>\S+):\s+(?P<message>.+)$".to_string(),
                 field_mapping: HashMap::new(),
                 is_builtin: true,
                 created_at: now,
                 updated_at: now,
-                extra_fields: Vec::new(),
-                has_level: true,
+                extra_fields: vec!["hostname".to_string()],
+                has_level: false,
                 has_timestamp: true,
                 has_source: true,
+                priority: 100,
             },
             LogTemplate {
-                name: "Bracketed Level".to_string(),
-                pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{3})\s+\[(?P<level>\w+)\]\s+(?P<source>\S+)\s+-\s+(?P<message>.+)$".to_string(),
+                name: "Linux Auth Log".to_string(),
+                pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<source>\S+?)(?:\[\d+\])?:\s+(?P<message>.+)$".to_string(),
                 field_mapping: HashMap::new(),
                 is_builtin: true,
                 created_at: now,
                 updated_at: now,
-                extra_fields: Vec::new(),
-                has_level: true,
+                extra_fields: vec!["hostname".to_string()],
+                has_level: false,
                 has_timestamp: true,
                 has_source: true,
+                priority: 100,
             },
             LogTemplate {
-                name: "Level First".to_string(),
-                pattern: r"^(?P<level>\w+)\s*[:\[\]]+\s*(?P<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*)\s*(?:\[(?P<source>\w+)\])?\s*(?P<message>.+)$".to_string(),
+                name: "Nginx Access Log".to_string(),
+                pattern: r#"^(?P<ip>\S+)\s+-\s+(?P<user>\S+)\s+\[(?P<timestamp>[^\]]+)\]\s+"(?P<request>[^"]+)"\s+(?P<status>\d+)\s+(?P<size>\S+)\s+"(?P<referer>[^"]*)"\s+"(?P<user_agent>[^"]*)"(?:\s+"(?P<extra>[^"]*)")?$"#.to_string(),
                 field_mapping: HashMap::new(),
                 is_builtin: true,
                 created_at: now,
                 updated_at: now,
-                extra_fields: Vec::new(),
-                has_level: true,
+                extra_fields: vec!["ip".to_string(), "user".to_string(), "request".to_string(), "status".to_string(), "size".to_string(), "referer".to_string(), "user_agent".to_string()],
+                has_level: false,
                 has_timestamp: true,
-                has_source: true,
-            },
-            LogTemplate {
-                name: "Date First".to_string(),
-                pattern: r"^(?P<timestamp>\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})\s*\[(?P<level>\w+)\]\s*(?P<source>\S+)\s*-?\s*(?P<message>.+)$".to_string(),
-                field_mapping: HashMap::new(),
-                is_builtin: true,
-                created_at: now,
-                updated_at: now,
-                extra_fields: Vec::new(),
-                has_level: true,
-                has_timestamp: true,
-                has_source: true,
-            },
-            LogTemplate {
-                name: "Full Bracketed".to_string(),
-                pattern: r"^\[(?P<timestamp>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[.,]\d{3})\]\s+\[(?P<level>\w+)\]\s+\[(?P<source>\w+)\](?:\s+\[\w+\])?\s+(?P<message>.+)$".to_string(),
-                field_mapping: HashMap::new(),
-                is_builtin: true,
-                created_at: now,
-                updated_at: now,
-                extra_fields: Vec::new(),
-                has_level: true,
-                has_timestamp: true,
-                has_source: true,
+                has_source: false,
+                priority: 100,
             },
         ]
     }

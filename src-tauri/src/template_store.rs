@@ -12,16 +12,27 @@ pub struct TemplateStore {
 
 impl TemplateStore {
     pub fn new() -> Self {
-        let data_dir = std::env::current_exe()
-            .map(|p| p.parent().unwrap_or(&PathBuf::from(".")).join("data"))
-            .unwrap_or_else(|_| PathBuf::from("data"));
-        
-        let templates_path = data_dir.join("templates.json");
+        let templates_path = Self::resolve_templates_path();
         
         Self {
             templates_path,
             lock: Arc::new(RwLock::new(())),
         }
+    }
+    
+    fn resolve_templates_path() -> PathBuf {
+        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let dev_path = PathBuf::from(manifest_dir).join("data").join("templates.json");
+            if dev_path.parent().map_or(false, |p| p.exists()) || cfg!(debug_assertions) {
+                return dev_path;
+            }
+        }
+        
+        let data_dir = std::env::current_exe()
+            .map(|p| p.parent().unwrap_or(&PathBuf::from(".")).join("data"))
+            .unwrap_or_else(|_| PathBuf::from("data"));
+        
+        data_dir.join("templates.json")
     }
     
     pub fn get_templates_path(&self) -> &PathBuf {

@@ -122,6 +122,57 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_sample_log_format() {
+        let parser = LogParser::new(1);
+        let line = "[2026-03-21 16:03:33.999] [FATAL] [Worker] [T14] Received shutdown signal - ID:5283";
+        let entry = parser.parse_line(line, 1, 0);
+        
+        println!("Level: {:?}", entry.level);
+        println!("Source: {}", entry.source_str());
+        println!("Message: {}", entry.message_str());
+        println!("Timestamp: {}", entry.timestamp);
+        
+        assert_eq!(entry.level, LogLevel::Fatal);
+        assert_eq!(entry.source_str(), "Worker");
+        assert!(entry.message_str().contains("Received shutdown signal"));
+        assert!(entry.timestamp > 0);
+    }
+
+    #[test]
+    fn test_parse_sample_log_with_cr() {
+        let parser = LogParser::new(1);
+        let line_with_cr = "[2026-03-21 16:03:33.999] [FATAL] [Worker] [T14] Received shutdown signal - ID:5283\r";
+        let entry = parser.parse_line(line_with_cr, 1, 0);
+        
+        println!("Level with CR: {:?}", entry.level);
+        println!("Source with CR: {}", entry.source_str());
+        println!("Message with CR: {}", entry.message_str());
+        println!("Timestamp with CR: {}", entry.timestamp);
+        
+        assert_eq!(entry.level, LogLevel::Fatal);
+        assert_eq!(entry.source_str(), "Worker");
+        assert!(entry.message_str().contains("Received shutdown signal"));
+        assert!(entry.timestamp > 0);
+    }
+
+    #[test]
+    fn test_decode_line_removes_cr() {
+        use crate::reader::{LogFileReader, FileEncoding};
+        
+        let data_with_cr = b"[2026-03-21 16:03:33.999] [FATAL] [Worker] [T14] Test message\r";
+        let data_without_cr = b"[2026-03-21 16:03:33.999] [FATAL] [Worker] [T14] Test message";
+        
+        let line_with_cr = LogFileReader::decode_line(data_with_cr, FileEncoding::Utf8);
+        let line_without_cr = LogFileReader::decode_line(data_without_cr, FileEncoding::Utf8);
+        
+        println!("With CR: '{}'", line_with_cr);
+        println!("Without CR: '{}'", line_without_cr);
+        
+        assert!(!line_with_cr.ends_with('\r'), "Line should not end with CR");
+        assert_eq!(line_with_cr, line_without_cr, "Lines should be equal after decode_line");
+    }
+
+    #[test]
     fn test_parse_iso_timestamp() {
         let parser = LogParser::new(1);
         let line = "2023-10-01T12:30:45.123 INFO com.example.Service - ISO格式时间戳";

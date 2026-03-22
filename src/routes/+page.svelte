@@ -134,6 +134,11 @@
     logStore.refreshFilters();
   }
 
+  function handleClearAllFilterConditions() {
+    templateStore.clearFilterConditions();
+    logStore.refreshFilters();
+  }
+
   async function handleOpenFile() {
     statusMessage = '正在打开文件...';
     try {
@@ -274,21 +279,20 @@
     onSearch={handleSearch} 
     onTimeFilter={handleTimeFilter} 
   />
+  <FilterPanel 
+    fields={extraFields}
+    conditions={filterConditions}
+    combineMode={filterCombineMode}
+    onAdd={handleAddFilterCondition}
+    onRemove={handleRemoveFilterCondition}
+    onUpdate={handleUpdateFilterCondition}
+    onCombineModeChange={handleFilterCombineModeChange}
+    onClearAll={handleClearAllFilterConditions}
+  />
   <CategoryTabs 
     activeCategory={activeCategory} 
     onCategoryChange={handleCategoryChange} 
   />
-  {#if filterConditions.length > 0 || extraFields.length > 0}
-    <FilterPanel 
-      fields={extraFields}
-      conditions={filterConditions}
-      combineMode={filterCombineMode}
-      onAdd={handleAddFilterCondition}
-      onRemove={handleRemoveFilterCondition}
-      onUpdate={handleUpdateFilterCondition}
-      onCombineModeChange={handleFilterCombineModeChange}
-    />
-  {/if}
   <div class="main-content">
     <div class="log-list-panel">
       <LogList 
