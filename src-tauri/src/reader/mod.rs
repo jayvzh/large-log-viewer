@@ -90,7 +90,7 @@ impl LogFileReader {
     }
     
     pub fn decode_line(data: &[u8], encoding: FileEncoding) -> String {
-        match encoding {
+        let mut line = match encoding {
             FileEncoding::Utf8 | FileEncoding::Auto => {
                 String::from_utf8_lossy(data).into_owned()
             }
@@ -103,7 +103,13 @@ impl LogFileReader {
             FileEncoding::Ansi => {
                 encoding_rs::WINDOWS_1252.decode(data).0.into_owned()
             }
+        };
+        
+        if line.ends_with('\r') {
+            line.pop();
         }
+        
+        line
     }
     
     pub fn read_lines(&self) -> Result<LineIterator, String> {

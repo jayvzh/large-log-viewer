@@ -128,6 +128,7 @@ impl LogEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LogEntryView {
     pub id: u64,
     pub timestamp: i64,

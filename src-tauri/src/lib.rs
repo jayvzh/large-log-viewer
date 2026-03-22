@@ -3,11 +3,13 @@ pub mod database;
 pub mod parser;
 pub mod reader;
 pub mod commands;
+pub mod template_store;
 
 pub use models::*;
 pub use database::Database;
 pub use parser::LogParser;
 pub use reader::LogFileReader;
+pub use template_store::TemplateStore;
 
 #[cfg(test)]
 mod tests {

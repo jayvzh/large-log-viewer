@@ -2,38 +2,14 @@
 
 use log_viewer_lib::commands::AppState;
 use log_viewer_lib::Database;
-use std::env;
-use tauri::{Emitter, Manager};
-use tauri_plugin_single_instance::init;
 
 fn main() {
     let db = Database::new().expect("Failed to initialize database");
-    
-    let args: Vec<String> = env::args().collect();
-    let initial_file = if args.len() > 1 {
-        Some(args[1].clone())
-    } else {
-        None
-    };
     
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(init(|app, args, _| {
-            if args.len() > 1 {
-                let file_path = args[1].clone();
-                let app_handle = app.app_handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = app_handle.emit("open-file-argument", file_path);
-                });
-            }
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-                let _ = window.unminimize();
-            }
-        }))
         .manage(AppState::new(db))
         .invoke_handler(tauri::generate_handler![
             log_viewer_lib::commands::open_file,
@@ -64,17 +40,8 @@ fn main() {
             log_viewer_lib::commands::detect_template,
             log_viewer_lib::commands::export_templates,
             log_viewer_lib::commands::import_templates,
+            log_viewer_lib::commands::export_logs,
         ])
-        .setup(move |app| {
-            if let Some(file_path) = initial_file {
-                let app_handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                    let _ = app_handle.emit("open-file-argument", file_path);
-                });
-            }
-            Ok(())
-        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

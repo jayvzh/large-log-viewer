@@ -1,5 +1,84 @@
 # 变更日志
 
+## v0.3.1
+
+### Fixed
+
+- **修复 Windows 换行符导致日志解析失败的问题**：
+  - 问题：Windows 风格换行符（`\r\n`）的日志文件无法正确解析时间戳，所有日志显示为当前系统时间
+  - 原因：`MmapReader::next_line` 只处理 `\n` 作为换行符，`\r` 字符留在行尾导致正则表达式无法匹配
+  - 修复：在 `LogFileReader::decode_line()` 中去除行尾的 `\r` 字符
+  - 文件：[src-tauri/src/reader/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/reader/mod.rs)
+
+## v0.3.0
+
+### Added
+
+- **多实例支持**：
+  - 移除 `tauri-plugin-single-instance` 插件，允许多个程序实例同时运行
+  - 数据库路径使用进程ID隔离（`logs_{pid}.db`），各实例数据互不干扰
+  - 文件：[src-tauri/Cargo.toml](file:///e:/Code/github/large-log-viewer/src-tauri/Cargo.toml)、[main.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/main.rs)、[database/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/database/mod.rs)
+- **模板存储优化**：
+  - 新增 `TemplateStore` 模块，将用户模板存储到独立 JSON 文件
+  - 模板存储路径：`{exe_dir}/data/templates.json`
+  - 多实例共享模板数据，便于备份迁移
+  - 文件：[src-tauri/src/template_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/template_store.rs)
+- **日志导出功能**：
+  - 新增 `export_logs` Tauri 命令
+  - 支持导出过滤后的日志和搜索结果
+  - 支持纯文本和 JSON 格式导出
+  - 前端 ControlBar 添加导出按钮和导出对话框
+  - 导出时自动应用当前过滤条件（级别、搜索、时间筛选、字段筛选）
+  - 文件：[src-tauri/src/commands/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/commands/mod.rs)、[src/lib/api/tauri.ts](file:///e:/Code/github/large-log-viewer/src/lib/api/tauri.ts)、[src/lib/components/ControlBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/ControlBar.svelte)
+
+- **字段筛选功能集成**：
+  - FilterPanel 组件集成到主页面（CategoryTabs 下方）
+  - 字段筛选条件自动应用到过滤流程
+  - 支持核心字段（时间、级别、来源、消息、原始内容）和模板额外字段
+  - 支持 AND/OR 组合模式
+  - 文件：[src/routes/+page.svelte](file:///e:/Code/github/large-log-viewer/src/routes/+page.svelte)、[src/lib/stores/logStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/logStore.ts)
+
+### Changed
+
+- **解析状态筛选改进**：
+  - 将"显示未解析"复选框改为下拉选择
+  - 支持三种模式：全部日志、仅已解析、仅未解析
+  - **改为后端过滤**：解析状态筛选现在在后端进行，触发 CategoryTabs 统计更新
+  - 文件：[src/lib/components/ControlBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/ControlBar.svelte)、[src/lib/stores/logStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/logStore.ts)
+
+- **统一下拉菜单样式**：
+  - 所有下拉菜单统一使用原生 `<select>` 元素
+  - 移除自定义下拉菜单组件，减少代码复杂度
+  - 文件：[src/lib/components/ControlBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/ControlBar.svelte)
+
+- **编码/模板选择器即时重载**：
+  - 选择编码后，如果已打开文件则立即重新加载
+  - 选择模板后，如果已打开文件则立即重新解析
+  - 文件：[src/lib/components/FileBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FileBar.svelte)
+
+- **CategoryTabs 统计优化**：
+  - 级别统计现在基于过滤结果而非全部日志
+  - 搜索后各级别数量会相应更新
+  - 文件：[src/lib/stores/logStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/logStore.ts)、[src/lib/components/CategoryTabs.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/CategoryTabs.svelte)
+
+- **导出按钮重命名**：
+  - "导出"改为"导出筛选"，更准确描述功能
+
+- **后端序列化修复**：
+  - 修复 `LogEntryView` 字段序列化为 camelCase
+  - `is_parsed` 正确序列化为 `isParsed`
+  - 文件：[src-tauri/src/models/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/models/mod.rs)
+
+- **移除调试日志**：
+  - 清理 `commands/mod.rs` 和 `database/mod.rs` 中的 `eprintln!` 调试输出
+  - 代码更整洁，减少不必要的控制台输出
+- **模板检测优化**：
+  - `detect_template` 命令只读取文件前 100 行进行检测
+  - 提升大文件模板检测速度
+- **时间过滤确认**：
+  - 确认时间过滤正确使用后端时间索引
+  - 前端正确传递时间参数
+
 ## v0.2.3
 
 ### Added
@@ -48,6 +127,14 @@
     - `applyFieldFilters`：字段驱动筛选逻辑
     - `setShowUnparsed`/`getShowUnparsed`：未解析日志显示控制
     - `LogEntry` 接口新增 `extra` 和 `isParsed` 字段
+- **模板编辑器语法指引功能**：
+  - 新增右侧语法指引面板，可折叠/展开
+  - 添加命名捕获组语法说明：`(?P<字段名>正则表达式)`
+  - 添加内置字段名及别名对照表（timestamp/time/ts、level/lvl/severity 等）
+  - 添加常用正则语法速查表（\d、\w、\s、[]、{} 等）
+  - 添加 4 个示例模板（标准日志格式、方括号级别格式、JSON 日志格式、带线程信息格式）
+  - 示例模板支持一键应用，自动填充正则表达式和测试日志
+  - 文件：[TemplateEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateEditorModal.svelte)
 
 ### Changed
 

@@ -3,12 +3,14 @@
   import FileBar from '$lib/components/FileBar.svelte';
   import ControlBar from '$lib/components/ControlBar.svelte';
   import CategoryTabs from '$lib/components/CategoryTabs.svelte';
+  import FilterPanel from '$lib/components/FilterPanel.svelte';
   import LogList from '$lib/components/LogList.svelte';
   import LogDetail from '$lib/components/LogDetail.svelte';
   import StatusBar from '$lib/components/StatusBar.svelte';
   import SettingsModal from '$lib/components/SettingsModal.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
   import { logStore } from '$lib/stores/logStore';
+  import { templateStore, type FilterCondition } from '$lib/stores/templateStore';
   import { settingsStore } from '$lib/stores/settingsStore';
   import { onParseProgress, isTauriSync } from '$lib/api';
   import { listen } from '@tauri-apps/api/event';
@@ -28,6 +30,9 @@
   let fileName = $state('');
   let detailHeight = $state(180);
   let isResizing = $state(false);
+  let extraFields = $state<string[]>([]);
+  let filterConditions = $state<FilterCondition[]>([]);
+  let filterCombineMode = $state<'and' | 'or'>('and');
 
   $effect(() => {
     const unsubscribe = logStore.subscribe(() => {
@@ -39,6 +44,15 @@
         fileName = currentFile.name;
         loadTime = logStore.getLoadTime();
       }
+    });
+    return unsubscribe;
+  });
+
+  $effect(() => {
+    const unsubscribe = templateStore.subscribe(() => {
+      extraFields = templateStore.getCurrentFields();
+      filterConditions = templateStore.getFilterConditions();
+      filterCombineMode = templateStore.getFilterCombineMode();
     });
     return unsubscribe;
   });
@@ -98,6 +112,26 @@
 
   async function handleTimeFilter(filter: string) {
     await logStore.setTimeFilter(filter);
+  }
+
+  function handleAddFilterCondition(condition: FilterCondition) {
+    templateStore.addFilterCondition(condition);
+    logStore.refreshFilters();
+  }
+
+  function handleRemoveFilterCondition(id: string) {
+    templateStore.removeFilterCondition(id);
+    logStore.refreshFilters();
+  }
+
+  function handleUpdateFilterCondition(condition: FilterCondition) {
+    templateStore.updateFilterCondition(condition);
+    logStore.refreshFilters();
+  }
+
+  function handleFilterCombineModeChange(mode: 'and' | 'or') {
+    templateStore.setFilterCombineMode(mode);
+    logStore.refreshFilters();
   }
 
   async function handleOpenFile() {
@@ -244,6 +278,17 @@
     activeCategory={activeCategory} 
     onCategoryChange={handleCategoryChange} 
   />
+  {#if filterConditions.length > 0 || extraFields.length > 0}
+    <FilterPanel 
+      fields={extraFields}
+      conditions={filterConditions}
+      combineMode={filterCombineMode}
+      onAdd={handleAddFilterCondition}
+      onRemove={handleRemoveFilterCondition}
+      onUpdate={handleUpdateFilterCondition}
+      onCombineModeChange={handleFilterCombineModeChange}
+    />
+  {/if}
   <div class="main-content">
     <div class="log-list-panel">
       <LogList 

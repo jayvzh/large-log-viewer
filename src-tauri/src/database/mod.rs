@@ -36,7 +36,8 @@ impl Database {
         std::fs::create_dir_all(&data_dir)
             .map_err(|e| format!("Failed to create data directory: {}", e))?;
         
-        let db_path = data_dir.join("logs.db");
+        let pid = std::process::id();
+        let db_path = data_dir.join(format!("logs_{}.db", pid));
         let db = sled::open(&db_path)
             .map_err(|e| format!("Failed to open database at {:?}: {}", db_path, e))?;
         
@@ -108,20 +109,14 @@ impl Database {
         let mut entries = Vec::with_capacity(limit as usize);
         let prefix = format!("log:{}:", file_id);
         
-        eprintln!("db.get_entries: prefix={}, offset={}, limit={}", prefix, offset, limit);
-        
         let iter = db.scan_prefix(prefix.as_bytes());
         let mut count: u64 = 0;
-        let mut keys_found = Vec::new();
         
         for item in iter {
             if count >= offset + limit {
                 break;
             }
-            if let Ok((key, value)) = item {
-                let key_str = String::from_utf8_lossy(&key).to_string();
-                keys_found.push(key_str.clone());
-                eprintln!("db.get_entries: count={}, key={}", count, key_str);
+            if let Ok((_, value)) = item {
                 if count >= offset {
                     let entry: LogEntry = serde_json::from_slice(&value)
                         .map_err(|e| format!("Failed to deserialize entry: {}", e))?;
@@ -131,7 +126,6 @@ impl Database {
             }
         }
         
-        eprintln!("db.get_entries: returned {} entries, total scanned={}, keys={:?}", entries.len(), count, keys_found.len());
         Ok(entries)
     }
     
@@ -229,9 +223,6 @@ impl Database {
     }
     
     pub async fn build_search_index_from_map(&self, file_id: u64, word_index: &HashMap<u64, RoaringBitmap>) -> Result<(), String> {
-        eprintln!("build_search_index_from_map: start, word_index len={}", word_index.len());
-        
-        // 先收集所有要写入的数据
         let mut data_to_write: Vec<(String, Vec<u8>)> = Vec::with_capacity(word_index.len());
         
         for (hash, bitmap) in word_index {
@@ -242,9 +233,6 @@ impl Database {
             data_to_write.push((key, value));
         }
         
-        eprintln!("build_search_index_from_map: prepared {} entries", data_to_write.len());
-        
-        // 然后获取锁并写入
         {
             let db = self.db.read().await;
             for (key, value) in data_to_write {
@@ -253,7 +241,6 @@ impl Database {
             }
         }
         
-        eprintln!("build_search_index_from_map: done");
         Ok(())
     }
     
@@ -424,6 +411,25 @@ impl Database {
                 entries.push(entry);
             }
         }
+        Ok(entries)
+    }
+    
+    pub async fn get_all_entries(&self, file_id: u64) -> Result<Vec<LogEntry>, String> {
+        let db = self.db.read().await;
+        let prefix = format!("log:{}:", file_id);
+        
+        let mut entries = Vec::new();
+        
+        let iter = db.scan_prefix(prefix.as_bytes());
+        for item in iter {
+            if let Ok((_, value)) = item {
+                if let Ok(entry) = serde_json::from_slice::<LogEntry>(&value) {
+                    entries.push(entry);
+                }
+            }
+        }
+        
+        entries.sort_by_key(|e| e.id);
         Ok(entries)
     }
     

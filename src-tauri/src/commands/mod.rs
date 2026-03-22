@@ -4,6 +4,7 @@ use crate::models::*;
 use crate::parser::LogParser;
 use crate::parser::LogTemplateParser;
 use crate::reader::LogFileReader;
+use crate::template_store::TemplateStore;
 use roaring::RoaringBitmap;
 use std::collections::HashMap;
 use std::fs;
@@ -21,6 +22,7 @@ const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 
 pub struct AppState {
     db: Arc<Database>,
+    template_store: Arc<TemplateStore>,
     current_file: RwLock<Option<FileInfo>>,
     next_file_id: RwLock<u64>,
 }
@@ -29,6 +31,7 @@ impl AppState {
     pub fn new(db: Database) -> Self {
         Self {
             db: Arc::new(db),
+            template_store: Arc::new(TemplateStore::new()),
             current_file: RwLock::new(None),
             next_file_id: RwLock::new(1),
         }
@@ -119,7 +122,7 @@ pub async fn parse_log(
     
     // 根据是否提供模板名称选择解析器
     let template_parser = if let Some(ref name) = template_name {
-        let templates = state.db.get_all_templates().await?;
+        let templates = state.template_store.get_all_templates().await?;
         let template = templates.iter().find(|t| &t.name == name)
             .ok_or_else(|| format!("Template not found: {}", name))?;
         Some(LogTemplateParser::new(vec![template.clone()])?)
@@ -299,9 +302,6 @@ pub async fn parse_log(
     
     let final_count = entry_count.load(Ordering::SeqCst);
     
-    eprintln!("parse_log: completed, final_count={}, file_id={}", final_count, file_id);
-    
-    eprintln!("parse_log: storing level bitmaps...");
     for (i, bitmap) in level_bitmaps.iter().enumerate() {
         let level = match i {
             0 => LogLevel::Fatal,
@@ -314,7 +314,6 @@ pub async fn parse_log(
         };
         state.db.store_level_bitmap(file_id, level, bitmap).await?;
     }
-    eprintln!("parse_log: level bitmaps stored");
     
     let _ = app.emit("parse_progress", ParseProgress {
         file_id,
@@ -326,9 +325,7 @@ pub async fn parse_log(
         is_complete: false,
     });
     
-    eprintln!("parse_log: building search index, word_index len={}", word_index.len());
     state.db.build_search_index_from_map(file_id, &word_index).await?;
-    eprintln!("parse_log: search index built");
     
     let _ = app.emit("parse_progress", ParseProgress {
         file_id,
@@ -340,14 +337,12 @@ pub async fn parse_log(
         is_complete: true,
     });
     
-    eprintln!("parse_log: updating current_file...");
     let mut current_file = state.current_file.write().await;
     if let Some(ref mut info) = *current_file {
         info.entry_count = final_count;
     }
     drop(current_file);
     
-    eprintln!("parse_log: returning final_count={}", final_count);
     Ok(final_count)
 }
 
@@ -358,16 +353,89 @@ pub async fn get_entries(
     limit: u64,
     state: State<'_, AppState>,
 ) -> Result<Vec<LogEntryView>, String> {
-    eprintln!("get_entries: file_id={}, offset={}, limit={}", file_id, offset, limit);
     let entries = state.db.get_entries(file_id, offset, limit).await?;
-    eprintln!("get_entries: returned {} entries", entries.len());
     
     Ok(entries.iter().map(LogEntryView::from).collect())
 }
 
 #[tauri::command]
+pub async fn export_logs(
+    file_id: u64,
+    output_path: String,
+    format: String,
+    level: Option<String>,
+    query: Option<String>,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<u64, String> {
+    let mut result_bitmap: Option<RoaringBitmap> = None;
+    
+    if let Some(l) = level {
+        let level_enum = LogLevel::from_str(&l);
+        let level_bitmap = state.db.get_level_bitmap(file_id, level_enum).await?
+            .unwrap_or_default();
+        result_bitmap = Some(level_bitmap);
+    }
+    
+    if let (Some(start), Some(end)) = (start_time, end_time) {
+        let time_bitmap = state.db.filter_by_time_indexed(file_id, start, end).await?;
+        result_bitmap = match result_bitmap {
+            Some(b) => Some(b & time_bitmap),
+            None => Some(time_bitmap),
+        };
+    }
+    
+    if let Some(q) = query {
+        let search_bitmap = state.db.search_bitmap(file_id, &q).await?;
+        result_bitmap = match result_bitmap {
+            Some(b) => Some(b & search_bitmap),
+            None => Some(search_bitmap),
+        };
+    }
+    
+    let ids: Vec<u64> = match result_bitmap {
+        Some(bitmap) => bitmap.iter().map(|id| id as u64).collect(),
+        None => {
+            let entries = state.db.get_all_entries(file_id).await?;
+            entries.iter().map(|e| e.id).collect()
+        }
+    };
+    
+    let entries = state.db.get_entries_by_ids(file_id, &ids).await?;
+    
+    let content = match format.as_str() {
+        "json" => {
+            let views: Vec<LogEntryView> = entries.iter().map(LogEntryView::from).collect();
+            serde_json::to_string_pretty(&views)
+                .map_err(|e| format!("Failed to serialize: {}", e))?
+        }
+        _ => {
+            entries.iter()
+                .map(|e| {
+                    let ts = if e.timestamp > 0 {
+                        chrono::DateTime::from_timestamp_millis(e.timestamp)
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+                            .unwrap_or_else(|| e.timestamp.to_string())
+                    } else {
+                        "-".to_string()
+                    };
+                    format!("{} | {} | {} | {}", ts, e.level.as_str(), e.source_str(), e.message_str())
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    };
+    
+    fs::write(&output_path, content)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+    
+    Ok(entries.len() as u64)
+}
+
+#[tauri::command]
 pub async fn get_templates(state: State<'_, AppState>) -> Result<Vec<LogTemplate>, String> {
-    state.db.get_all_templates().await
+    state.template_store.get_all_templates().await
 }
 
 #[tauri::command]
@@ -378,7 +446,7 @@ pub async fn create_template(
     if template.is_builtin {
         return Err("Cannot create builtin template".to_string());
     }
-    state.db.store_template(&template).await
+    state.template_store.add_template(&template).await
 }
 
 #[tauri::command]
@@ -389,7 +457,7 @@ pub async fn update_template(
     if template.is_builtin {
         return Err("Cannot update builtin template".to_string());
     }
-    state.db.store_template(&template).await
+    state.template_store.add_template(&template).await
 }
 
 #[tauri::command]
@@ -397,12 +465,12 @@ pub async fn delete_template(
     name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if let Some(t) = state.db.get_template(&name).await? {
+    if let Some(t) = state.template_store.get_template(&name).await? {
         if t.is_builtin {
             return Err("Cannot delete builtin template".to_string());
         }
     }
-    state.db.delete_template(&name).await
+    state.template_store.remove_template(&name).await
 }
 
 #[tauri::command]
@@ -419,7 +487,7 @@ pub async fn detect_template(
     encoding: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<DetectResult>, String> {
-    let templates = state.db.get_all_templates().await?;
+    let templates = state.template_store.get_all_templates().await?;
     let parser = LogTemplateParser::new(templates)?;
     
     let settings = get_settings().await.unwrap_or_default();
@@ -443,7 +511,7 @@ pub async fn detect_template(
 
 #[tauri::command]
 pub async fn export_templates(state: State<'_, AppState>) -> Result<String, String> {
-    let templates = state.db.get_all_templates().await?;
+    let templates = state.template_store.get_all_templates().await?;
     serde_json::to_string_pretty(&templates)
         .map_err(|e| format!("Failed to export templates: {}", e))
 }
@@ -461,7 +529,7 @@ pub async fn import_templates(
         t.is_builtin = false;
         t.created_at = chrono::Utc::now().timestamp_millis();
         t.updated_at = t.created_at;
-        state.db.store_template(&t).await?;
+        state.template_store.add_template(&t).await?;
         count += 1;
     }
     
