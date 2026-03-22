@@ -1,5 +1,15 @@
 # 变更日志
 
+## v0.4.1
+
+### Fixed
+
+- **修复模板操作后界面闪烁问题**：
+  - 问题：新增、编辑、删除模板后界面会短暂消失再重新出现，类似重启效果
+  - 原因1：FileBar.svelte 中无依赖的 `$effect` 导致重复调用 `loadTemplates()`
+  - 原因2：开发模式下模板存储在 `src-tauri/data/` 目录，Tauri dev 监视该目录变化导致重新构建
+  - 修复：移除 FileBar 中无依赖的 `$effect`；为 `loadTemplates()` 添加静默模式参数；将模板存储路径改为用户数据目录（`~/.local/share/LogViewer/` 或 `%APPDATA%/LogViewer/`）
+
 ## v0.4.0
 
 ### Added
@@ -24,6 +34,12 @@
   - 添加折叠/展开功能
   - 折叠状态持久化到 localStorage
   - 添加"清除所有筛选"按钮
+
+- **模板编辑器简化**：
+  - 移除右侧冗长的语法指引面板
+  - 添加 AI 辅助生成提示词，用户可复制给 ChatGPT/Claude 生成模板
+  - 底部简化语法说明，一目了然
+  - 测试结果更直观地显示提取的字段
 
 ### Fixed
 

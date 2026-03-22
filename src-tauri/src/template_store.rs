@@ -21,16 +21,9 @@ impl TemplateStore {
     }
     
     fn resolve_templates_path() -> PathBuf {
-        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-            let dev_path = PathBuf::from(manifest_dir).join("data").join("templates.json");
-            if dev_path.parent().map_or(false, |p| p.exists()) || cfg!(debug_assertions) {
-                return dev_path;
-            }
-        }
-        
-        let data_dir = std::env::current_exe()
-            .map(|p| p.parent().unwrap_or(&PathBuf::from(".")).join("data"))
-            .unwrap_or_else(|_| PathBuf::from("data"));
+        let data_dir = dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("LogViewer");
         
         data_dir.join("templates.json")
     }

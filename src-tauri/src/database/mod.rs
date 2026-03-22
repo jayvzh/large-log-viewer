@@ -129,6 +129,31 @@ impl Database {
         Ok(entries)
     }
     
+    pub async fn clear_file_data(&self, file_id: u64) -> Result<(), String> {
+        let db = self.db.read().await;
+        
+        let prefixes = [
+            format!("log:{}:", file_id),
+            format!("level_bitmap:{}:", file_id),
+            format!("time_idx:{}:", file_id),
+            format!("word_idx:{}:", file_id),
+            format!("extra_idx:{}:", file_id),
+        ];
+        
+        for prefix in prefixes {
+            let keys: Vec<Vec<u8>> = db.scan_prefix(prefix.as_bytes())
+                .filter_map(|item| item.ok())
+                .map(|(key, _)| key.to_vec())
+                .collect();
+            
+            for key in keys {
+                let _ = db.remove(&key);
+            }
+        }
+        
+        Ok(())
+    }
+    
     pub async fn store_level_bitmap(&self, file_id: u64, level: LogLevel, bitmap: &RoaringBitmap) -> Result<(), String> {
         let db = self.db.read().await;
         let key = format!("level_bitmap:{}:{}", file_id, level as u8);

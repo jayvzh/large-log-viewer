@@ -31,6 +31,19 @@ impl LogTemplateParser {
         }
     }
     
+    pub fn parse_line_debug(&self, line: &str) -> (LogEvent, bool, String) {
+        for (name, re) in &self.compiled {
+            if let Some(caps) = re.captures(line) {
+                let event = self.captures_to_event(&caps, re, name);
+                return (event, true, name.clone());
+            }
+        }
+        (LogEvent {
+            message: line.to_string(),
+            ..Default::default()
+        }, false, String::new())
+    }
+    
     fn captures_to_event(&self, caps: &regex::Captures, re: &Regex, _template_name: &str) -> LogEvent {
         let mut event = LogEvent::default();
         let mut extra = HashMap::new();
