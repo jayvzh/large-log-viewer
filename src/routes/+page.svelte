@@ -106,8 +106,8 @@
     await logStore.setActiveCategory(category);
   }
 
-  async function handleSearch(query: string, scope: string, mode: string) {
-    await logStore.setSearchQuery(query, scope, mode);
+  async function handleSearch(query: string, mode: string) {
+    await logStore.setSearchQuery(query, mode);
   }
 
   async function handleTimeFilter(filter: string) {
@@ -212,7 +212,7 @@
       e.preventDefault();
       activeCategory = 'all';
       logStore.setActiveCategory('all');
-      logStore.setSearchQuery('', 'all', 'fuzzy');
+      logStore.setSearchQuery('', 'fuzzy');
       logStore.setTimeFilter('all');
     }
   }

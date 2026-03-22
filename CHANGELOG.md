@@ -1,5 +1,28 @@
 # 变更日志
 
+## v0.5.0
+
+### Changed
+
+- **重构搜索与筛选界面**：
+  - 移除 ControlBar 的「搜索范围」选择器，简化为全局搜索（搜索全部字段）
+  - 搜索按钮改为图标按钮，界面更简洁
+  - FilterPanel 重命名为「高级筛选」，定位更清晰
+  - 减少搜索和筛选功能的重叠，降低用户学习成本
+  - 文件：[ControlBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/ControlBar.svelte)、[FilterPanel.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FilterPanel.svelte)、[logStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/logStore.ts)、[+page.svelte](file:///e:/Code/github/large-log-viewer/src/routes/+page.svelte)
+
+## v0.4.2
+
+### Changed
+
+- **更新 README 文档**：
+  - 重构标题和简介，添加核心亮点列表（性能、解析、搜索、过滤）
+  - 重构「模板系统」章节，详细说明模板语法、核心字段名、内置模板
+  - 新增「模板系统详解」章节，包含自定义模板示例、自动检测流程、AI 辅助生成说明
+  - 更新「支持的日志格式」章节，区分内置模板支持的格式和自定义模板支持的格式
+  - 更新「项目结构」章节，添加模板相关文件说明
+  - 文件：[README.md](file:///e:/Code/github/large-log-viewer/README.md)
+
 ## v0.4.1
 
 ### Fixed
@@ -9,6 +32,10 @@
   - 原因1：FileBar.svelte 中无依赖的 `$effect` 导致重复调用 `loadTemplates()`
   - 原因2：开发模式下模板存储在 `src-tauri/data/` 目录，Tauri dev 监视该目录变化导致重新构建
   - 修复：移除 FileBar 中无依赖的 `$effect`；为 `loadTemplates()` 添加静默模式参数；将模板存储路径改为用户数据目录（`~/.local/share/LogViewer/` 或 `%APPDATA%/LogViewer/`）
+
+### Changed
+
+- **移除调试日志**：移除 `commands/mod.rs` 中的 DEBUG 日志输出
 
 ## v0.4.0
 

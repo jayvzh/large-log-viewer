@@ -117,7 +117,6 @@ pub async fn open_file(
     state: State<'_, AppState>,
     _app: AppHandle,
 ) -> Result<FileInfo, String> {
-    eprintln!("[DEBUG open_file] path={}", path);
     let path_buf = PathBuf::from(&path);
     
     if !path_buf.exists() {
@@ -171,7 +170,6 @@ pub async fn parse_log(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<ParseResult, String> {
-    eprintln!("[DEBUG parse_log] file_id={}, template_name={:?}", file_id, template_name);
     state.db.clear_file_data(file_id).await?;
     
     let path = {
@@ -254,12 +252,7 @@ pub async fn parse_log(
         // 根据是否使用模板解析器选择解析方式
         let parsed_entries: Vec<LogEntry> = if let Some(ref tp) = template_parser {
             chunk_refs.iter().map(|(line, line_number, offset)| {
-                let (event, matched, template_name) = tp.parse_line_debug(line);
-                
-                if *line_number <= 2 {
-                    eprintln!("[DEBUG parse] Line {}: matched={}, template={}, extra = {:?}", 
-                        line_number, matched, template_name, event.extra);
-                }
+                let (event, _matched, _template_name) = tp.parse_line_debug(line);
                 
                 let has_timestamp = event.timestamp.is_some();
                 let has_level = event.level.is_some();
@@ -295,10 +288,6 @@ pub async fn parse_log(
                 
                 let source = event.source.unwrap_or_default();
                 let summary = if event.message.is_empty() { line.to_string() } else { event.message.clone() };
-                
-                if *line_number <= 2 {
-                    eprintln!("[DEBUG parse] Line {}: extra = {:?}", line_number, event.extra);
-                }
                 
                 LogEntry::with_extra(
                     *line_number,
@@ -465,13 +454,7 @@ pub async fn get_entries(
     limit: u64,
     state: State<'_, AppState>,
 ) -> Result<Vec<LogEntryView>, String> {
-    eprintln!("[DEBUG get_entries] file_id={}, offset={}, limit={}", file_id, offset, limit);
     let entries = state.db.get_entries(file_id, offset, limit).await?;
-    
-    if offset == 0 && !entries.is_empty() {
-        eprintln!("[DEBUG get_entries] First entry extra fields: {:?}", entries[0].extra);
-    }
-    
     Ok(entries.iter().map(LogEntryView::from).collect())
 }
 
