@@ -48,7 +48,7 @@ mod tests {
         let entry = parser.parse_line(line, 1, 0);
         
         assert_eq!(entry.level, LogLevel::Info);
-        assert_eq!(entry.logger_str(), "com.example.Service");
+        assert_eq!(entry.source_str(), "com.example.Service");
         assert!(entry.summary_str().contains("用户登录成功"));
     }
 
@@ -59,7 +59,7 @@ mod tests {
         let entry = parser.parse_line(line, 2, 100);
         
         assert_eq!(entry.level, LogLevel::Error);
-        assert_eq!(entry.logger_str(), "com.example.Dao");
+        assert_eq!(entry.source_str(), "com.example.Dao");
         assert!(entry.summary_str().contains("数据库连接失败"));
     }
 
@@ -70,7 +70,7 @@ mod tests {
         let entry = parser.parse_line(line, 3, 200);
         
         assert_eq!(entry.level, LogLevel::Warn);
-        assert_eq!(entry.logger_str(), "com.example.Processor");
+        assert_eq!(entry.source_str(), "com.example.Processor");
     }
 
     #[test]
@@ -107,7 +107,7 @@ mod tests {
         let entry = parser.parse_line(line, 7, 600);
         
         assert_eq!(entry.level, LogLevel::Other);
-        assert_eq!(entry.logger_str(), "Unknown");
+        assert_eq!(entry.source_str(), "Unknown");
     }
 
     #[test]
@@ -148,7 +148,7 @@ mod tests {
         assert_eq!(entry.line_number, 1);
         assert_eq!(entry.timestamp, 1696168245000);
         assert_eq!(entry.level, LogLevel::Info);
-        assert_eq!(entry.logger_str(), "com.example.Test");
+        assert_eq!(entry.source_str(), "com.example.Test");
         assert_eq!(entry.summary_str(), "测试消息");
         assert_eq!(entry.raw_offset, 0);
         assert_eq!(entry.raw_length, 50);

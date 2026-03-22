@@ -5,31 +5,31 @@ use std::sync::LazyLock;
 
 static LOG_PATTERN_1: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"^(?<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{3})\s+(?<level>\w+)\s+(?<logger>\S+)\s+-\s+(?<summary>.+)$"
+        r"^(?<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{3})\s+(?<level>\w+)\s+(?<source>\S+)\s+-\s+(?<summary>.+)$"
     ).unwrap()
 });
 
 static LOG_PATTERN_2: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"^(?<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{3})\s+\[(?<level>\w+)\]\s+(?<logger>\S+)\s+-\s+(?<summary>.+)$"
+        r"^(?<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{3})\s+\[(?<level>\w+)\]\s+(?<source>\S+)\s+-\s+(?<summary>.+)$"
     ).unwrap()
 });
 
 static LOG_PATTERN_3: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"^(?<level>\w+)\s*[:\[\]]+\s*(?<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*)\s*(?:\[(?<logger>\w+)\])?\s*(?<summary>.+)$"
+        r"^(?<level>\w+)\s*[:\[\]]+\s*(?<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*)\s*(?:\[(?<source>\w+)\])?\s*(?<summary>.+)$"
     ).unwrap()
 });
 
 static LOG_PATTERN_4: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"^(?<timestamp>\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})\s*\[(?<level>\w+)\]\s*(?<logger>\S+)\s*-?\s*(?<summary>.+)$"
+        r"^(?<timestamp>\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})\s*\[(?<level>\w+)\]\s*(?<source>\S+)\s*-?\s*(?<summary>.+)$"
     ).unwrap()
 });
 
 static LOG_PATTERN_5: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"^\[(?<timestamp>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[.,]\d{3})\]\s+\[(?<level>\w+)\]\s+\[(?<logger>\w+)\](?:\s+\[\w+\])?\s+(?<summary>.+)$"
+        r"^\[(?<timestamp>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[.,]\d{3})\]\s+\[(?<level>\w+)\]\s+\[(?<source>\w+)\](?:\s+\[\w+\])?\s+(?<summary>.+)$"
     ).unwrap()
 });
 
@@ -50,14 +50,14 @@ impl LogParser {
             .or_else(|| self.try_parse_full_bracketed(line));
         
         match parsed {
-            Some((timestamp, level, logger, summary)) => {
+            Some((timestamp, level, source, summary)) => {
                 LogEntry::new(
                     line_number,
                     self.file_id,
                     line_number,
                     timestamp,
                     level,
-                    logger,
+                    source,
                     summary,
                     offset,
                     line.len() as u32,
@@ -84,10 +84,10 @@ impl LogParser {
         
         let timestamp = self.parse_timestamp(caps.name("timestamp")?.as_str())?;
         let level = LogLevel::from_str(caps.name("level")?.as_str());
-        let logger = caps.name("logger")?.as_str();
+        let source = caps.name("source")?.as_str();
         let summary = caps.name("summary")?.as_str();
         
-        Some((timestamp, level, logger, summary))
+        Some((timestamp, level, source, summary))
     }
     
     fn try_parse_bracketed_level<'a>(&self, line: &'a str) -> Option<(i64, LogLevel, &'a str, &'a str)> {
@@ -95,10 +95,10 @@ impl LogParser {
         
         let timestamp = self.parse_timestamp(caps.name("timestamp")?.as_str())?;
         let level = LogLevel::from_str(caps.name("level")?.as_str());
-        let logger = caps.name("logger")?.as_str();
+        let source = caps.name("source")?.as_str();
         let summary = caps.name("summary")?.as_str();
         
-        Some((timestamp, level, logger, summary))
+        Some((timestamp, level, source, summary))
     }
     
     fn try_parse_level_first<'a>(&self, line: &'a str) -> Option<(i64, LogLevel, &'a str, &'a str)> {
@@ -106,14 +106,14 @@ impl LogParser {
         
         let level = LogLevel::from_str(caps.name("level")?.as_str());
         let timestamp = self.parse_timestamp(caps.name("timestamp")?.as_str())?;
-        let logger = caps.name("logger")
+        let source = caps.name("source")
             .map(|m| m.as_str())
             .unwrap_or("Unknown");
         let summary = caps.name("summary")
             .map(|m| m.as_str())
             .unwrap_or("");
         
-        Some((timestamp, level, logger, summary))
+        Some((timestamp, level, source, summary))
     }
     
     fn try_parse_custom<'a>(&self, line: &'a str) -> Option<(i64, LogLevel, &'a str, &'a str)> {
@@ -121,14 +121,14 @@ impl LogParser {
         
         let timestamp = self.parse_timestamp(caps.name("timestamp")?.as_str())?;
         let level = LogLevel::from_str(caps.name("level")?.as_str());
-        let logger = caps.name("logger")
+        let source = caps.name("source")
             .map(|m| m.as_str())
             .unwrap_or("Unknown");
         let summary = caps.name("summary")
             .map(|m| m.as_str())
             .unwrap_or("");
         
-        Some((timestamp, level, logger, summary))
+        Some((timestamp, level, source, summary))
     }
     
     fn try_parse_full_bracketed<'a>(&self, line: &'a str) -> Option<(i64, LogLevel, &'a str, &'a str)> {
@@ -136,10 +136,10 @@ impl LogParser {
         
         let timestamp = self.parse_timestamp(caps.name("timestamp")?.as_str())?;
         let level = LogLevel::from_str(caps.name("level")?.as_str());
-        let logger = caps.name("logger")?.as_str();
+        let source = caps.name("source")?.as_str();
         let summary = caps.name("summary")?.as_str();
         
-        Some((timestamp, level, logger, summary))
+        Some((timestamp, level, source, summary))
     }
     
     fn parse_timestamp(&self, s: &str) -> Option<i64> {

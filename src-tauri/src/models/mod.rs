@@ -52,7 +52,7 @@ pub struct LogEntry {
     pub line_number: u64,
     pub timestamp: i64,
     pub level: LogLevel,
-    pub logger: SmallVec<[u8; 64]>,
+    pub source: SmallVec<[u8; 64]>,
     pub summary: SmallVec<[u8; 128]>,
     pub raw_offset: u64,
     pub raw_length: u32,
@@ -65,7 +65,7 @@ impl LogEntry {
         line_number: u64,
         timestamp: i64,
         level: LogLevel,
-        logger: &str,
+        source: &str,
         summary: &str,
         raw_offset: u64,
         raw_length: u32,
@@ -76,15 +76,15 @@ impl LogEntry {
             line_number,
             timestamp,
             level,
-            logger: SmallVec::from_slice(logger.as_bytes()),
+            source: SmallVec::from_slice(source.as_bytes()),
             summary: SmallVec::from_slice(summary.as_bytes()),
             raw_offset,
             raw_length,
         }
     }
     
-    pub fn logger_str(&self) -> &str {
-        std::str::from_utf8(&self.logger).unwrap_or("Unknown")
+    pub fn source_str(&self) -> &str {
+        std::str::from_utf8(&self.source).unwrap_or("Unknown")
     }
     
     pub fn summary_str(&self) -> &str {
@@ -97,7 +97,7 @@ pub struct LogEntryView {
     pub id: u64,
     pub timestamp: i64,
     pub level: String,
-    pub logger: String,
+    pub source: String,
     pub summary: String,
     pub raw: String,
 }
@@ -108,7 +108,7 @@ impl From<&LogEntry> for LogEntryView {
             id: entry.id,
             timestamp: entry.timestamp,
             level: entry.level.as_str().to_string(),
-            logger: entry.logger_str().to_string(),
+            source: entry.source_str().to_string(),
             summary: entry.summary_str().to_string(),
             raw: String::new(),
         }

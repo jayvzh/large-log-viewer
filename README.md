@@ -9,7 +9,7 @@
 - **智能分类**：自动识别日志级别（FATAL/ERROR/WARN/INFO/DEBUG/TRACE），支持快速过滤
 - **高效搜索**：
   - 支持模糊搜索、精确匹配、正则表达式三种模式
-  - 支持全部范围、记录者、内容三种搜索范围
+  - 支持全部范围、来源、内容三种搜索范围
 - **虚拟滚动**：支持千万级日志条目的流畅滚动和快速跳转
 - **多格式查看**：支持文本、HTML、JSON、XML 四种查看模式
 - **时间筛选**：按时间范围快速筛选日志
@@ -595,8 +595,8 @@ log-viewer/
 
 | 范围 | 说明 |
 |------|------|
-| **全部范围** | 搜索日志原始内容、摘要和记录者 |
-| **记录者** | 仅搜索记录者（Logger）字段 |
+| **全部范围** | 搜索日志原始内容、摘要和来源 |
+| **来源** | 仅搜索来源（Source）字段 |
 | **内容** | 仅搜索日志摘要和原始内容 |
 
 ### 使用示例
@@ -733,7 +733,7 @@ for item in iter {
 // 实际代码：硬编码限制
 let entries = state.db.get_entries(file_id, 0, 10000).await?;  // ❌ 只搜索前10000条
 let filtered: Vec<_> = entries.iter().filter(|e| {
-    e.logger_str().to_lowercase().contains(&query_lower)  // ❌ 内存中线性扫描
+    e.source_str().to_lowercase().contains(&query_lower)  // ❌ 内存中线性扫描
     // ...
 }).collect();
 ```

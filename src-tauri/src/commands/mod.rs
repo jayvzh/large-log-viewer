@@ -177,7 +177,7 @@ pub async fn parse_log(
                 local_bitmaps[level_idx].insert(current_id as u32);
             }
             
-            let text = format!("{} {}", entry.logger_str(), entry.summary_str());
+            let text = format!("{} {}", entry.source_str(), entry.summary_str());
             let words = tokenize(&text);
             for word in words {
                 use std::hash::{Hash, Hasher};

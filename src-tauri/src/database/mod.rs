@@ -204,7 +204,7 @@ impl Database {
         let mut word_index: HashMap<u64, RoaringBitmap> = HashMap::new();
         
         for entry in entries {
-            let text = format!("{} {}", entry.logger_str(), entry.summary_str());
+            let text = format!("{} {}", entry.source_str(), entry.summary_str());
             let words = tokenize(&text);
             for word in words {
                 let hash = hash_word(&word);
