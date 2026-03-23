@@ -1,5 +1,49 @@
 # 变更日志
 
+## v0.5.3
+
+### Fixed
+
+- **修复拖拽文件打开功能**：
+  - 问题：拖拽文件到界面没有反应，无法打开文件
+  - 原因：原代码使用 HTML5 原生拖拽事件（ondragover/ondrop），但 Tauri webview 中这些事件无法正确获取文件路径
+  - 修复：使用 Tauri 专门的拖拽事件系统 `getCurrentWindow().onDragDropEvent()`
+  - Tauri 环境：使用 `onDragDropEvent` 监听拖拽事件，通过 `event.payload.paths` 获取文件路径
+  - Web 环境：保留 HTML5 拖拽事件，显示提示信息引导用户使用桌面应用
+  - 文件：[+page.svelte](file:///e:/Code/github/large-log-viewer/src/routes/+page.svelte)
+
+## v0.5.2
+
+### Fixed
+
+- **修复模板导出功能**：
+  - 问题：点击导出按钮没有反应，无法弹出保存对话框
+  - 原因：原代码使用传统 Web 方式（创建 `<a>` 元素下载），在 Tauri 应用中无法正常工作
+  - 修复：使用 Tauri 的 `@tauri-apps/plugin-dialog` 的 `save()` API 弹出保存对话框，使用 `@tauri-apps/plugin-fs` 的 `writeTextFile()` 写入文件
+  - 新增依赖：前端 `@tauri-apps/plugin-fs`，后端 `tauri-plugin-fs`
+  - 配置：capabilities 添加 `fs:read-all` 和 `fs:write-all` 权限
+  - 文件：[TemplateManagerModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateManagerModal.svelte)、[Cargo.toml](file:///e:/Code/github/large-log-viewer/src-tauri/Cargo.toml)、[main.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/main.rs)、[default.json](file:///e:/Code/github/large-log-viewer/src-tauri/capabilities/default.json)
+
+## v0.5.1
+
+### Changed
+
+- **文档结构重组**：
+  - 创建 [development.md](file:///e:/Code/github/large-log-viewer/development.md) 开发文档，整合技术架构、模板系统详解、开发进度和待改进事项
+  - 精简优化 [README.md](file:///e:/Code/github/large-log-viewer/README.md)，保留用户使用相关内容，移除开发细节
+  - 删除 TODO.md 和 templatesys.md，内容已整合到 development.md
+  - README.md 添加指向 development.md 的链接，方便开发者查阅详细文档
+- **README 模板系统章节精简**：
+  - 将模板系统章节从详细说明改为简略介绍
+  - 详细内容（语法、字段映射、自定义示例、自动检测、创建步骤、AI辅助）移至 development.md
+  - README 仅保留核心功能概述和快速创建模板指南
+
+### Added
+
+- **模板编辑器优先级提示**：
+  - 在优先级字段标签后添加「数值越大优先级越高」提示文字
+  - 文件：[TemplateEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateEditorModal.svelte)
+
 ## v0.5.0
 
 ### Changed

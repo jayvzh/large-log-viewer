@@ -14,6 +14,7 @@
   import { settingsStore } from '$lib/stores/settingsStore';
   import { onParseProgress, isTauriSync } from '$lib/api';
   import { listen } from '@tauri-apps/api/event';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
 
   let selectedLogId = $state<number | null>(null);
   let activeCategory = $state<string>('all');
@@ -74,6 +75,7 @@
     if (!isTauriSync()) return;
     
     let unlisten: (() => void) | null = null;
+    let unlistenDrag: (() => void) | null = null;
     
     listen<string>('open-file-argument', async (event) => {
       const filePath = event.payload;
@@ -90,10 +92,47 @@
     }).then((fn) => {
       unlisten = fn;
     });
+
+    getCurrentWindow().onDragDropEvent(async (event) => {
+      if (event.payload.type === 'enter') {
+        isDragging = true;
+      } else if (event.payload.type === 'leave') {
+        isDragging = false;
+      } else if (event.payload.type === 'drop') {
+        isDragging = false;
+        const paths = event.payload.paths;
+        if (paths && paths.length > 0) {
+          const filePath = paths[0];
+          const isValidFile = filePath.endsWith('.log') || 
+                              filePath.endsWith('.txt') || 
+                              filePath.endsWith('.json') ||
+                              filePath.endsWith('.1') ||
+                              !filePath.includes('.');
+          
+          if (isValidFile) {
+            statusMessage = '正在加载文件...';
+            try {
+              await logStore.loadFile(filePath);
+              statusMessage = '';
+            } catch (err) {
+              console.error('Failed to load dropped file:', err);
+              statusMessage = '加载文件失败';
+            }
+          } else {
+            statusMessage = '不支持的文件类型，请拖拽 .log, .txt, .json 文件';
+          }
+        }
+      }
+    }).then((fn) => {
+      unlistenDrag = fn;
+    });
     
     return () => {
       if (unlisten) {
         unlisten();
+      }
+      if (unlistenDrag) {
+        unlistenDrag();
       }
     };
   });
@@ -157,50 +196,14 @@
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
-    isDragging = true;
   }
 
   function handleDragLeave(e: DragEvent) {
     e.preventDefault();
-    isDragging = false;
   }
 
   async function handleDrop(e: DragEvent) {
     e.preventDefault();
-    isDragging = false;
-    
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      const isValidFile = file.name.endsWith('.log') || 
-                          file.name.endsWith('.txt') || 
-                          file.name.endsWith('.json') ||
-                          file.name.endsWith('.1') ||
-                          !file.name.includes('.');
-      
-      if (isValidFile) {
-        statusMessage = '正在加载文件...';
-        try {
-          if (isTauriSync()) {
-            const path = (file as any).path;
-            if (path) {
-              await logStore.loadFile(path);
-              statusMessage = '';
-            } else {
-              statusMessage = '无法获取文件路径';
-            }
-          } else {
-            statusMessage = '拖拽功能需要在 Tauri 桌面应用中使用。\n请运行 pnpm tauri dev 启动桌面应用。';
-            console.warn('Drag and drop file loading is only supported in Tauri environment');
-          }
-        } catch (err) {
-          console.error('Failed to load file:', err);
-          statusMessage = '加载文件失败';
-        }
-      } else {
-        statusMessage = '不支持的文件类型，请拖拽 .log, .txt, .json 文件';
-      }
-    }
   }
 
   function handleKeydown(e: KeyboardEvent) {
