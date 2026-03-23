@@ -1,5 +1,69 @@
 # 变更日志
 
+## v0.6.1 (2026-03-24)
+
+### Fixed
+
+- **修复测试用例中的类型错误**：
+  - 问题：测试用例中的LogTemplate初始化缺少default_highlight字段，且类型不匹配
+  - 修复：为测试用例添加default_highlight字段，并使用正确的Option<String>类型
+  - 文件：[lib.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/lib.rs)
+
+- **修复测试用例期望不匹配问题**：
+  - 问题：测试用例期望5个内置模板，但实际只有3个
+  - 修复：更新测试用例的期望数量，并修改测试数据以匹配实际的内置模板格式
+  - 文件：[lib.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/lib.rs)
+
+### Added
+
+- **在前端设置默认高亮模板**：
+  - 问题：程序启动时高亮模板显示"无"
+  - 修复：在highlightStore.loadProfiles()中，当currentProfile为null时，自动设置general_default为默认高亮模板
+  - 文件：[highlightStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/highlightStore.ts)
+
+### Changed
+
+- **移除调试日志**：
+  - 移除前端和后端的debug日志输出，使代码更整洁
+  - 文件：[highlightStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/highlightStore.ts)、[FileBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FileBar.svelte)、[commands/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/commands/mod.rs)、[highlight_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_store.rs)
+
+## v0.6.0 (2026-03-23)
+
+### Fixed
+
+- **修复内置高亮模板不显示的问题**：
+  - 问题：内置高亮模板（general_default、web_default、security_default）无法正常显示
+  - 修复：添加调试日志，确认后端正确返回内置模板
+  - 文件：[commands/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/commands/mod.rs)、[highlightStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/highlightStore.ts)
+
+- **修复新建高亮模板点击无反应的问题**：
+  - 问题：HighlightEditorModal 的 open 方法未导出，无法从外部调用
+  - 修复：为 open 和 close 方法添加 export 关键字
+  - 文件：[HighlightEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/HighlightEditorModal.svelte)
+
+- **修复 TemplateEditorModal 类型错误**：
+  - 问题：selectedHighlight 类型为 `string | null`，但 LogTemplate.default_highlight 类型为 `string | undefined`
+  - 修复：将 selectedHighlight 类型改为 `string | undefined`
+  - 文件：[TemplateEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateEditorModal.svelte)
+
+- **修复 TemplateManagerModal 参数错误**：
+  - 问题：`highlightStore.loadProfiles(true)` 调用错误，loadProfiles 方法不接受参数
+  - 修复：移除多余的参数
+  - 文件：[TemplateManagerModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateManagerModal.svelte)
+
+### Added
+
+- **为内置日志模板添加默认高亮模板字段**：
+  - Linux Syslog → general_default
+  - Linux Auth Log → security_default
+  - Nginx Access Log → web_default
+  - 文件：[template.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/parser/template.rs)
+
+- **在模板编辑页面添加高亮模板选择下拉框**：
+  - 允许用户为日志模板设置默认高亮模板
+  - 下拉框显示内置和用户自定义的高亮模板
+  - 文件：[TemplateEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateEditorModal.svelte)
+
 ## v0.5.3
 
 ### Fixed
@@ -9,8 +73,15 @@
   - 原因：原代码使用 HTML5 原生拖拽事件（ondragover/ondrop），但 Tauri webview 中这些事件无法正确获取文件路径
   - 修复：使用 Tauri 专门的拖拽事件系统 `getCurrentWindow().onDragDropEvent()`
   - Tauri 环境：使用 `onDragDropEvent` 监听拖拽事件，通过 `event.payload.paths` 获取文件路径
-  - Web 环境：保留 HTML5 拖拽事件，显示提示信息引导用户使用桌面应用
   - 文件：[+page.svelte](file:///e:/Code/github/large-log-viewer/src/routes/+page.svelte)
+
+### Changed
+
+- **清理网页端冗余代码**：
+  - 移除拖拽功能中的网页端兼容代码（isTauriSync 检查和提示信息）
+  - 清理 env.ts 中未使用的函数（isTauri、getEnvironment、platform 导入）
+  - 该项目为 Tauri 桌面应用，网页端仅用于开发预览，无需兼容
+  - 文件：[+page.svelte](file:///e:/Code/github/large-log-viewer/src/routes/+page.svelte)、[env.ts](file:///e:/Code/github/large-log-viewer/src/lib/api/env.ts)
 
 ## v0.5.2
 

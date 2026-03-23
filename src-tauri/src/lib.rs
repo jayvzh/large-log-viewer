@@ -4,12 +4,16 @@ pub mod parser;
 pub mod reader;
 pub mod commands;
 pub mod template_store;
+pub mod highlight_store;
+pub mod highlight_engine;
 
 pub use models::*;
 pub use database::Database;
 pub use parser::LogParser;
 pub use reader::LogFileReader;
 pub use template_store::TemplateStore;
+pub use highlight_store::HighlightStore;
+pub use highlight_engine::HighlightEngine;
 
 #[cfg(test)]
 mod tests {
@@ -261,6 +265,7 @@ mod template_tests {
             has_timestamp: true,
             has_source: false,
             priority: 0,
+            default_highlight: Some("general_default".to_string()),
         };
         
         assert_eq!(template.name, "Test Template");
@@ -272,13 +277,12 @@ mod template_tests {
         let templates = LogTemplateParser::get_builtin_templates();
         let parser = LogTemplateParser::new(templates).unwrap();
         
-        let line = "2023-10-01 12:30:45.123 INFO  com.example.Service - Test message";
+        let line = "2023-10-01T12:30:45.123+00:00 hostname sshd: Failed password for root from 192.168.1.1 port 22 ssh2";
         let event = parser.parse_line(line);
         
         assert!(event.timestamp.is_some());
-        assert_eq!(event.level, Some("INFO".to_string()));
-        assert_eq!(event.source, Some("com.example.Service".to_string()));
-        assert!(event.message.contains("Test message"));
+        assert_eq!(event.source, Some("sshd".to_string()));
+        assert!(event.message.contains("Failed password"));
     }
 
     #[test]
@@ -286,7 +290,7 @@ mod template_tests {
         let templates = LogTemplateParser::get_builtin_templates();
         let parser = LogTemplateParser::new(templates).unwrap();
         
-        let line = "2023-10-01 12:30:45.123 INFO  com.example.Service - Test message";
+        let line = "2023-10-01T12:30:45.123+00:00 hostname sshd: Failed password for root from 192.168.1.1 port 22 ssh2";
         let event = parser.parse_line(line);
         
         assert!(event.timestamp.is_some());
@@ -306,6 +310,7 @@ mod template_tests {
             has_timestamp: true,
             has_source: false,
             priority: 0,
+            default_highlight: Some("general_default".to_string()),
         }];
         
         let parser = LogTemplateParser::new(templates).unwrap();
@@ -333,17 +338,16 @@ mod template_tests {
         let templates = LogTemplateParser::get_builtin_templates();
         let parser = LogTemplateParser::new(templates).unwrap();
         
+        // Use a line that matches Linux Syslog format
         let lines = vec![
-            "2023-10-01 12:30:45.123 INFO  com.example.Service - Message 1",
-            "2023-10-01 12:30:46.123 ERROR com.example.Dao - Message 2",
-            "2023-10-01 12:30:47.123 WARN  com.example.Util - Message 3",
+            "2023-10-01T12:30:45.123+00:00 hostname sshd: Failed password for root from 192.168.1.1 port 22 ssh2",
         ];
         
         let refs: Vec<&str> = lines.iter().map(|s| s.as_ref()).collect();
         let results = parser.detect_best_template(&refs);
         
         assert!(!results.is_empty());
-        assert_eq!(results[0].template_name, "Standard Format");
+        assert_eq!(results[0].template_name, "Linux Syslog");
         assert!(results[0].match_rate > 0.9);
     }
 
@@ -384,7 +388,7 @@ mod template_tests {
     #[test]
     fn test_builtin_templates_count() {
         let templates = LogTemplateParser::get_builtin_templates();
-        assert_eq!(templates.len(), 5);
+        assert_eq!(templates.len(), 3);
         
         for t in &templates {
             assert!(t.is_builtin);

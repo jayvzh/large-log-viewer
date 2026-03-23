@@ -107,6 +107,7 @@ impl LogTemplateParser {
                 has_timestamp: true,
                 has_source: true,
                 priority: 100,
+                default_highlight: Some("general_default".to_string()),
             },
             LogTemplate {
                 name: "Linux Auth Log".to_string(),
@@ -120,6 +121,7 @@ impl LogTemplateParser {
                 has_timestamp: true,
                 has_source: true,
                 priority: 100,
+                default_highlight: Some("security_default".to_string()),
             },
             LogTemplate {
                 name: "Nginx Access Log".to_string(),
@@ -133,6 +135,7 @@ impl LogTemplateParser {
                 has_timestamp: true,
                 has_source: false,
                 priority: 100,
+                default_highlight: Some("web_default".to_string()),
             },
         ]
     }

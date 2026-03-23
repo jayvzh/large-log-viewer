@@ -140,6 +140,8 @@ pub struct LogEntryView {
     pub extra: HashMap<String, String>,
     #[serde(default)]
     pub is_parsed: bool,
+    #[serde(default)]
+    pub highlight_spans: Vec<HighlightSpan>,
 }
 
 impl From<&LogEntry> for LogEntryView {
@@ -153,6 +155,7 @@ impl From<&LogEntry> for LogEntryView {
             raw: String::new(),
             extra: entry.extra.clone(),
             is_parsed: entry.is_parsed,
+            highlight_spans: Vec::new(),
         }
     }
 }
@@ -234,6 +237,8 @@ pub struct LogTemplate {
     pub has_source: bool,
     #[serde(default)]
     pub priority: u32,
+    #[serde(default)]
+    pub default_highlight: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -272,4 +277,96 @@ pub struct ExtraFilterCondition {
 pub struct ParseResult {
     pub entry_count: u64,
     pub detected_template: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HighlightSpan {
+    pub start: usize,
+    pub end: usize,
+    pub class: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct HighlightStyle {
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub bold: Option<bool>,
+    #[serde(default)]
+    pub italic: Option<bool>,
+    #[serde(default)]
+    pub underline: Option<bool>,
+}
+
+impl HighlightStyle {
+    pub fn to_css_class(&self) -> String {
+        let mut classes = Vec::new();
+        if let Some(ref color) = self.color {
+            classes.push(format!("hl-{}", color.to_lowercase()));
+        }
+        if self.bold.unwrap_or(false) {
+            classes.push("hl-bold".to_string());
+        }
+        if self.italic.unwrap_or(false) {
+            classes.push("hl-italic".to_string());
+        }
+        if self.underline.unwrap_or(false) {
+            classes.push("hl-underline".to_string());
+        }
+        classes.join(" ")
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        let mut style = Self::default();
+        for part in s.split_whitespace() {
+            match part.to_lowercase().as_str() {
+                "red" => style.color = Some("red".to_string()),
+                "green" => style.color = Some("green".to_string()),
+                "blue" => style.color = Some("blue".to_string()),
+                "yellow" => style.color = Some("yellow".to_string()),
+                "cyan" => style.color = Some("cyan".to_string()),
+                "purple" => style.color = Some("purple".to_string()),
+                "gray" | "grey" => style.color = Some("gray".to_string()),
+                "bold" => style.bold = Some(true),
+                "italic" => style.italic = Some(true),
+                "underline" => style.underline = Some(true),
+                _ => {}
+            }
+        }
+        style
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum HighlightRule {
+    Field {
+        field: String,
+        #[serde(default)]
+        style_map: HashMap<String, String>,
+    },
+    Token {
+        pattern: String,
+        style: String,
+    },
+    Keyword {
+        words: Vec<String>,
+        style: String,
+    },
+    Regex {
+        pattern: String,
+        style: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HighlightProfile {
+    pub name: String,
+    pub rules: Vec<HighlightRule>,
+    #[serde(default)]
+    pub is_builtin: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
 }

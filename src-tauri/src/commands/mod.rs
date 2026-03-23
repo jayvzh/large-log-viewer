@@ -1,5 +1,8 @@
 use crate::database::Database;
 use crate::database::tokenize;
+
+use crate::highlight_engine::HighlightEngine;
+use crate::highlight_store::HighlightStore;
 use crate::models::*;
 use crate::parser::LogParser;
 use crate::parser::LogTemplateParser;
@@ -23,6 +26,8 @@ const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 pub struct AppState {
     db: Arc<Database>,
     template_store: Arc<TemplateStore>,
+    highlight_store: Arc<HighlightStore>,
+    highlight_engine: RwLock<HighlightEngine>,
     current_file: RwLock<Option<FileInfo>>,
     next_file_id: RwLock<u64>,
     template_parser: RwLock<Option<Arc<LogTemplateParser>>>,
@@ -34,6 +39,8 @@ impl AppState {
         Self {
             db: Arc::new(db),
             template_store: Arc::new(TemplateStore::new()),
+            highlight_store: Arc::new(HighlightStore::new()),
+            highlight_engine: RwLock::new(HighlightEngine::new(vec![])),
             current_file: RwLock::new(None),
             next_file_id: RwLock::new(1),
             template_parser: RwLock::new(None),
@@ -108,6 +115,13 @@ impl AppState {
         *parser = None;
         let mut name = self.cached_template_name.write().await;
         *name = None;
+    }
+
+    async fn update_highlight_engine(&self) -> Result<(), String> {
+        let profiles = self.highlight_store.get_all_profiles().await?;
+        let mut engine = self.highlight_engine.write().await;
+        engine.update_profiles(profiles);
+        Ok(())
     }
 }
 
@@ -452,10 +466,20 @@ pub async fn get_entries(
     file_id: u64,
     offset: u64,
     limit: u64,
+    highlight_profile: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<LogEntryView>, String> {
     let entries = state.db.get_entries(file_id, offset, limit).await?;
-    Ok(entries.iter().map(LogEntryView::from).collect())
+    let mut views: Vec<LogEntryView> = entries.iter().map(LogEntryView::from).collect();
+    
+    if let Some(profile_name) = highlight_profile {
+        let engine = state.highlight_engine.read().await;
+        for (view, entry) in views.iter_mut().zip(&entries) {
+            view.highlight_spans = engine.process_entry(entry, &profile_name);
+        }
+    }
+    
+    Ok(views)
 }
 
 #[tauri::command]
@@ -685,6 +709,7 @@ pub async fn check_file_associations() -> Result<std::collections::HashMap<Strin
 pub async fn get_entry_detail(
     file_id: u64,
     entry_id: u64,
+    highlight_profile: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Option<LogEntryView>, String> {
     let entry = state.db.get_entry(file_id, entry_id).await?;
@@ -706,6 +731,11 @@ pub async fn get_entry_detail(
             
             let mut view = LogEntryView::from(&e);
             view.raw = raw;
+            
+            if let Some(profile_name) = highlight_profile {
+                let engine = state.highlight_engine.read().await;
+                view.highlight_spans = engine.process_entry(&e, &profile_name);
+            }
             
             Ok(Some(view))
         }
@@ -856,6 +886,7 @@ pub async fn filter_logs(
     limit: u64,
     extra_conditions: Option<Vec<ExtraFilterCondition>>,
     extra_combine_mode: Option<String>,
+    highlight_profile: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<LogEntryView>, String> {
     let mut result_bitmap: Option<RoaringBitmap> = None;
@@ -910,5 +941,91 @@ pub async fn filter_logs(
         None => state.db.get_entries(file_id, offset, limit).await?
     };
     
-    Ok(entries.iter().map(LogEntryView::from).collect())
+    let mut views: Vec<LogEntryView> = entries.iter().map(LogEntryView::from).collect();
+    
+    if let Some(profile_name) = highlight_profile {
+        let engine = state.highlight_engine.read().await;
+        for (view, entry) in views.iter_mut().zip(&entries) {
+            view.highlight_spans = engine.process_entry(entry, &profile_name);
+        }
+    }
+    
+    Ok(views)
+}
+
+#[tauri::command]
+pub async fn get_highlight_profiles(state: State<'_, AppState>) -> Result<Vec<HighlightProfile>, String> {
+    state.update_highlight_engine().await?;
+    let profiles = state.highlight_store.get_all_profiles().await?;
+    Ok(profiles)
+}
+
+#[tauri::command]
+pub async fn create_highlight_profile(
+    mut profile: HighlightProfile,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if profile.is_builtin {
+        return Err("Cannot create builtin highlight profile".to_string());
+    }
+    let now = chrono::Utc::now().timestamp_millis();
+    profile.created_at = now;
+    profile.updated_at = now;
+    state.highlight_store.add_profile(&profile).await?;
+    state.update_highlight_engine().await
+}
+
+#[tauri::command]
+pub async fn update_highlight_profile(
+    mut profile: HighlightProfile,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if profile.is_builtin {
+        return Err("Cannot update builtin highlight profile".to_string());
+    }
+    profile.updated_at = chrono::Utc::now().timestamp_millis();
+    state.highlight_store.add_profile(&profile).await?;
+    state.update_highlight_engine().await
+}
+
+#[tauri::command]
+pub async fn delete_highlight_profile(
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if let Some(p) = state.highlight_store.get_profile(&name).await? {
+        if p.is_builtin {
+            return Err("Cannot delete builtin highlight profile".to_string());
+        }
+    }
+    state.highlight_store.remove_profile(&name).await?;
+    state.update_highlight_engine().await
+}
+
+#[tauri::command]
+pub async fn export_highlight_profiles(state: State<'_, AppState>) -> Result<String, String> {
+    let profiles = state.highlight_store.get_all_profiles().await?;
+    serde_json::to_string_pretty(&profiles)
+        .map_err(|e| format!("Failed to export highlight profiles: {}", e))
+}
+
+#[tauri::command]
+pub async fn import_highlight_profiles(
+    json: String,
+    state: State<'_, AppState>,
+) -> Result<u32, String> {
+    let profiles: Vec<HighlightProfile> = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse highlight profiles: {}", e))?;
+    
+    let mut count = 0u32;
+    for mut p in profiles {
+        p.is_builtin = false;
+        p.created_at = chrono::Utc::now().timestamp_millis();
+        p.updated_at = p.created_at;
+        state.highlight_store.add_profile(&p).await?;
+        count += 1;
+    }
+    
+    state.update_highlight_engine().await?;
+    Ok(count)
 }

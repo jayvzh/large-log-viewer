@@ -42,6 +42,12 @@ fn main() {
             log_viewer_lib::commands::export_templates,
             log_viewer_lib::commands::import_templates,
             log_viewer_lib::commands::export_logs,
+            log_viewer_lib::commands::get_highlight_profiles,
+            log_viewer_lib::commands::create_highlight_profile,
+            log_viewer_lib::commands::update_highlight_profile,
+            log_viewer_lib::commands::delete_highlight_profile,
+            log_viewer_lib::commands::export_highlight_profiles,
+            log_viewer_lib::commands::import_highlight_profiles,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
