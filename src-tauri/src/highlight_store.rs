@@ -20,9 +20,9 @@ impl HighlightStore {
     }
     
     fn resolve_highlights_path() -> PathBuf {
-        let data_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("LogViewer");
+        let data_dir = std::env::current_exe()
+            .map(|p| p.parent().unwrap_or(&PathBuf::from(".")).join("data"))
+            .unwrap_or_else(|_| PathBuf::from("data"));
         
         data_dir.join("highlights.json")
     }

@@ -21,11 +21,24 @@ impl TemplateStore {
     }
     
     fn resolve_templates_path() -> PathBuf {
-        let data_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("LogViewer");
+        // 在开发模式下，使用 sample/data 目录作为模板存储路径
+        // 在生产模式下，使用可执行文件所在目录的 data 目录
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                // 检查是否是开发模式（临时目录）
+                if exe_dir.to_string_lossy().contains("AppData\\Local\\Temp") {
+                    // 开发模式：使用 sample/data 目录
+                    let project_root = PathBuf::from("e:\\Code\\github\\large-log-viewer");
+                    return project_root.join("sample").join("data").join("templates.json");
+                } else {
+                    // 生产模式：使用可执行文件所在目录的 data 目录
+                    return exe_dir.join("data").join("templates.json");
+                }
+            }
+        }
         
-        data_dir.join("templates.json")
+        // 默认使用当前目录的 data 目录
+        PathBuf::from("data").join("templates.json")
     }
     
     pub fn get_templates_path(&self) -> &PathBuf {

@@ -199,6 +199,12 @@ pub struct AppSettings {
     pub encoding: String,
     #[serde(default)]
     pub parallel_workers: Option<usize>,
+    #[serde(default = "default_timezone_handling")]
+    pub timezone_handling: String,
+}
+
+fn default_timezone_handling() -> String {
+    "utc".to_string()
 }
 
 impl Default for AppSettings {
@@ -207,6 +213,7 @@ impl Default for AppSettings {
             theme: "dark".to_string(),
             encoding: "auto".to_string(),
             parallel_workers: None,
+            timezone_handling: default_timezone_handling(),
         }
     }
 }

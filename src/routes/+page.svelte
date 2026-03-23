@@ -2,7 +2,7 @@
   import TitleBar from '$lib/components/TitleBar.svelte';
   import FileBar from '$lib/components/FileBar.svelte';
   import ControlBar from '$lib/components/ControlBar.svelte';
-  import CategoryTabs from '$lib/components/CategoryTabs.svelte';
+  import LevelBar from '$lib/components/LevelBar.svelte';
   import FilterPanel from '$lib/components/FilterPanel.svelte';
   import LogList from '$lib/components/LogList.svelte';
   import LogDetail from '$lib/components/LogDetail.svelte';
@@ -13,11 +13,12 @@
   import { templateStore, type FilterCondition } from '$lib/stores/templateStore';
   import { settingsStore } from '$lib/stores/settingsStore';
   import { onParseProgress, isTauriSync } from '$lib/api';
-  import { listen } from '@tauri-apps/api/event';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+  
 
   let selectedLogId = $state<number | null>(null);
-  let activeCategory = $state<string>('all');
+  let activeLevel = $state<string>('all');
   let logCount = $state<number>(0);
   let isDragging = $state(false);
   let showSettings = $state(false);
@@ -45,6 +46,11 @@
         fileSize = currentFile.size;
         fileName = currentFile.name;
         loadTime = logStore.getLoadTime();
+      }
+      // 同步activeLevel
+      const category = logStore.getActiveLevel();
+      if (category !== activeLevel) {
+        activeLevel = category;
       }
     });
     return unsubscribe;
@@ -141,9 +147,9 @@
     selectedLogId = id;
   }
 
-  async function handleCategoryChange(category: string) {
-    activeCategory = category;
-    await logStore.setActiveCategory(category);
+  async function handleLevelChange(level: string) {
+    activeLevel = level;
+    await logStore.setActiveLevel(level);
   }
 
   async function handleSearch(query: string, mode: string) {
@@ -218,10 +224,8 @@
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      activeCategory = 'all';
-      logStore.setActiveCategory('all');
-      logStore.setSearchQuery('', 'fuzzy');
-      logStore.setTimeFilter('all');
+      activeLevel = 'all';
+      logStore.setActiveLevel('all');
     }
   }
 
@@ -302,9 +306,9 @@
       onClearAll={handleClearAllFilterConditions}
     />
   {/if}
-  <CategoryTabs 
-    activeCategory={activeCategory} 
-    onCategoryChange={handleCategoryChange} 
+  <LevelBar 
+    activeLevel={activeLevel} 
+    onLevelChange={handleLevelChange} 
   />
   <div class="main-content">
     <div class="log-list-panel">

@@ -1,5 +1,100 @@
 # 变更日志
 
+## v0.6.2 (2026-03-24)
+
+### Fixed
+
+- **修复时间戳解析问题**：
+  - 问题：使用自定义模板解析日志时，时间戳显示为 3/22 00:03:xx 左右的错误时间
+  - 原因：时间戳解析格式使用了错误的 `%Y-%m-%d %H:%M:%S%.3f` 格式，正确格式应为 `%Y-%m-%d %H:%M:%S.%f`
+  - 修复：修正时间戳解析格式，使用 `%Y-%m-%d %H:%M:%S.%f`、`%Y-%m-%dT%H:%M:%S.%f` 和 `%Y-%m-%dT%H:%M:%S.%f%:z` 格式
+  - 文件：[commands/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/commands/mod.rs)
+
+- **修复模板优先级问题**：
+  - 问题：用户选择自定义模板后，模板会被按优先级重新排序，导致用户选择的模板不是第一个被使用的模板
+  - 原因：`LogTemplateParser::new` 函数会按照 priority 字段重新排序模板
+  - 修复：移除模板排序逻辑，保持用户选择的模板顺序
+  - 文件：[template.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/parser/template.rs)
+
+### Added
+
+- **实现动态隐藏来源列功能**：
+  - 当日志模板的 `has_source` 为 false 时，来源列会自动隐藏
+  - 为 templateStore 添加 `hasSource` 属性支持
+  - 修改 LogList 组件，根据 `hasSource` 条件显示/隐藏来源列
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)、[templateStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/templateStore.ts)
+
+- **添加表头拖动调整宽度功能**：
+  - 实现表头列宽拖动调整功能，用户可通过拖动表头边缘调整列宽
+  - 为表头添加拖动手柄和相关事件处理
+  - 最小列宽限制为 30px
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **为 accesslog 类型日志调整列宽**：
+  - 为 accesslog 模板的不同字段设置合适的列宽
+  - 加宽 request 列（250px）和 useragent 列（300px）
+  - 收窄 status 列（60px）和 size 列（80px）
+  - 为 referer 列设置合适宽度（200px）
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **添加表头竖线分隔**：
+  - 为表头列之间添加竖线分隔，使列边界更明显，方便用户拖动调整宽度
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **添加 accesslog 模板**：
+  - 新增 accesslog 内置模板，支持解析标准的 Nginx 访问日志格式
+  - 模板包含 ip、request、status、size、referer、useragent 字段
+  - 设置 `has_level: false` 和 `has_source: false`，自动隐藏级别和来源列
+  - 文件：[templates.json](file:///e:/Code/github/large-log-viewer/src-tauri/data/templates.json)
+
+- **实现列宽保存和加载功能**：
+  - 当用户调整列宽时，自动保存列宽配置到 localStorage
+  - 列宽配置与当前日志模板关联，不同模板有独立的列宽设置
+  - 切换模板时自动加载对应的列宽配置
+  - 删除模板时自动删除对应的列宽配置，避免产生垃圾数据
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)、[templateStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/templateStore.ts)
+
+### Changed
+
+- **统一模板和高亮存储路径**：
+  - 将模板文件（templates.json）和高亮模板文件（highlights.json）的存储路径改为与数据库文件一致的位置
+  - 现在所有数据文件都存储在 `{exe_dir}/data/` 目录中，方便备份和迁移
+  - 文件：[template_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/template_store.rs)、[highlight_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_store.rs)
+
+### Fixed
+
+- **修复表头和列对齐问题**：
+  - 统一表头和列的渲染逻辑，确保使用相同的列配置和样式
+  - 将所有列类（如col-line, col-time等）替换为统一的.col类
+  - 添加基于位置的样式，确保第一列（行号）、第二列（时间）和第三列（级别）具有正确的样式
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **修复表头竖线和文字间距问题**：
+  - 为表头添加 8px 的左右 padding，增加表头竖线和文字之间的间距
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **修复内容列宽不跟随表头变化问题**：
+  - 移除固定宽度的 CSS 样式，使用内联样式来设置列宽
+  - 确保内容列宽与表头保持一致，表头拖动调整宽度时内容列也会同步变化
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **修复 extra 字段列不能拖动问题**：
+  - 添加 extraFieldWidths 存储用户调整的宽度
+  - 修改 handleResizeMove 函数，支持 extra 字段列的宽度调整
+  - 修改 columns 的派生计算逻辑，确保 extra 字段列也能正常拖动调整宽度
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **修复 LevelBar 显示问题**：
+  - 当打开 accesslog 等无级别日志时，LevelBar 显示的日志条数现在使用筛选后的统计数据
+  - 在 LevelBar 右侧添加显示搜索/筛选结果的条目数
+  - 文件：[LevelBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LevelBar.svelte)
+
+- **修复模板选择不生效问题**：
+  - 问题：选择模板后，只有选中的模板会被使用，当模板不匹配时没有回退到其他模板
+  - 修复：修改 `get_or_create_parser` 函数，当用户选择模板时，优先使用该模板，同时在不匹配时尝试其他模板
+  - 确保即使选择了特定模板，也能解析不匹配该模板的日志行
+  - 文件：[commands/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/commands/mod.rs)
+
 ## v0.6.1 (2026-03-24)
 
 ### Fixed
@@ -14,6 +109,11 @@
   - 修复：更新测试用例的期望数量，并修改测试数据以匹配实际的内置模板格式
   - 文件：[lib.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/lib.rs)
 
+- **修复级别栏点击异常问题**：
+  - 问题：点击级别标签时，级别栏的统计数据会被筛选结果覆盖，导致所有级别数量显示为当前筛选级别的数量
+  - 修复：修改LevelBar组件，使用原始统计数据（getStats()）而非筛选后的数据（getFilteredStats()），确保级别栏显示的是原始日志的级别分布
+  - 文件：[LevelBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LevelBar.svelte)
+
 ### Added
 
 - **在前端设置默认高亮模板**：
@@ -21,11 +121,31 @@
   - 修复：在highlightStore.loadProfiles()中，当currentProfile为null时，自动设置general_default为默认高亮模板
   - 文件：[highlightStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/highlightStore.ts)
 
+- **为关键词规则添加样式支持**：
+  - 问题：高亮模板的关键词规则没有样式设置选项
+  - 修复：在HighlightEditorModal中为关键词规则添加样式输入框
+  - 文件：[HighlightEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/HighlightEditorModal.svelte)
+
+- **支持关键词规则多个关键词**：
+  - 问题：关键词规则只能输入一个关键词
+  - 修复：支持逗号分隔的多个关键词
+  - 文件：[HighlightEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/HighlightEditorModal.svelte)
+
 ### Changed
 
 - **移除调试日志**：
   - 移除前端和后端的debug日志输出，使代码更整洁
   - 文件：[highlightStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/highlightStore.ts)、[FileBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FileBar.svelte)、[commands/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/commands/mod.rs)、[highlight_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_store.rs)
+
+- **优化高亮模板下拉菜单**：
+  - 移除"无"选项，将general_default移动到顶部并改名为"通用默认"
+  - 为其他内置高亮模板添加中文名称（web_default → "Web默认"，security_default → "安全默认"）
+  - 文件：[FileBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FileBar.svelte)
+
+- **修改默认高亮模板回落规则**：
+  - 当日志模板没有设定高亮规则时，默认使用general_default
+  - 新建日志模板页面，高亮模板下拉框默认选中general_default
+  - 文件：[TemplateEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateEditorModal.svelte)、[logStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/logStore.ts)
 
 ## v0.6.0 (2026-03-23)
 

@@ -7,9 +7,8 @@ pub struct LogTemplateParser {
 }
 
 impl LogTemplateParser {
-    pub fn new(mut templates: Vec<LogTemplate>) -> Result<Self, String> {
-        templates.sort_by(|a, b| b.priority.cmp(&a.priority));
-        
+    pub fn new(templates: Vec<LogTemplate>) -> Result<Self, String> {
+        println!("DEBUG: Creating parser with templates: {:?}", templates.iter().map(|t| t.name.clone()).collect::<Vec<_>>());
         let mut compiled = Vec::new();
         for t in &templates {
             let re = Regex::new(&t.pattern)

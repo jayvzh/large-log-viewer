@@ -49,39 +49,40 @@ impl AppState {
     }
     
     async fn get_or_create_parser(&self, template_name: Option<&str>, lines_for_detection: Option<&[&str]>) -> Result<Option<Arc<LogTemplateParser>>, String> {
-        let cached_name = self.cached_template_name.read().await.clone();
-        
-        if let (Some(cached), Some(name)) = (&cached_name, template_name) {
-            if cached == name {
-                let parser = self.template_parser.read().await;
-                return Ok(parser.clone());
-            }
-        }
-        
-        let parser = if let Some(name) = template_name {
-            let templates = self.template_store.get_all_templates().await?;
-            let template = templates.iter().find(|t| &t.name == name);
-            if let Some(t) = template {
-                Some(Arc::new(LogTemplateParser::new(vec![t.clone()])?))
-            } else {
-                return Err(format!("Template not found: {}", name));
-            }
-        } else if let Some(lines) = lines_for_detection {
-            let templates = self.template_store.get_all_templates().await?;
-            if !templates.is_empty() {
-                let detector = LogTemplateParser::new(templates)?;
-                let results = detector.detect_best_template(lines);
-                if let Some(best) = results.first() {
-                    if best.match_rate > 0.5 {
-                        let templates = self.template_store.get_all_templates().await?;
-                        let template = templates.iter().find(|t| &t.name == &best.template_name);
-                        if let Some(t) = template {
-                            let parser = Arc::new(LogTemplateParser::new(vec![t.clone()])?);
-                            {
-                                let mut cached_name = self.cached_template_name.write().await;
-                                *cached_name = Some(t.name.clone());
+        let _cached_name = self.cached_template_name.read().await.clone();
+            
+            // 总是创建新的解析器，确保模板选择生效
+            let parser = if let Some(name) = template_name {
+                let templates = self.template_store.get_all_templates().await?;
+                let selected_template = templates.iter().find(|t| &t.name == name);
+                if let Some(t) = selected_template {
+                    // 只使用选中的模板，不添加其他模板
+                    let prioritized_templates = vec![t.clone()];
+                    Some(Arc::new(LogTemplateParser::new(prioritized_templates)?))
+                } else {
+                    return Err(format!("Template not found: {}", name));
+                }
+            } else if let Some(lines) = lines_for_detection {
+                let templates = self.template_store.get_all_templates().await?;
+                if !templates.is_empty() {
+                    let detector = LogTemplateParser::new(templates)?;
+                    let results = detector.detect_best_template(lines);
+                    if let Some(best) = results.first() {
+                        if best.match_rate > 0.5 {
+                            let templates = self.template_store.get_all_templates().await?;
+                            let template = templates.iter().find(|t| &t.name == &best.template_name);
+                            if let Some(t) = template {
+                                // 只使用检测到的模板，不添加其他模板
+                                let prioritized_templates = vec![t.clone()];
+                                let parser = Arc::new(LogTemplateParser::new(prioritized_templates)?);
+                                {
+                                    let mut cached_name = self.cached_template_name.write().await;
+                                    *cached_name = Some(t.name.clone());
+                                }
+                                return Ok(Some(parser));
+                            } else {
+                                None
                             }
-                            return Ok(Some(parser));
                         } else {
                             None
                         }
@@ -93,10 +94,7 @@ impl AppState {
                 }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
         
         {
             let mut cached_parser = self.template_parser.write().await;
@@ -266,7 +264,7 @@ pub async fn parse_log(
         // 根据是否使用模板解析器选择解析方式
         let parsed_entries: Vec<LogEntry> = if let Some(ref tp) = template_parser {
             chunk_refs.iter().map(|(line, line_number, offset)| {
-                let (event, _matched, _template_name) = tp.parse_line_debug(line);
+                let event = tp.parse_line(line);
                 
                 let has_timestamp = event.timestamp.is_some();
                 let has_level = event.level.is_some();
@@ -274,17 +272,22 @@ pub async fn parse_log(
                 let is_parsed = has_timestamp || has_level || has_extra;
                 
                 let timestamp = event.timestamp
-                    .and_then(|ts| {
+                    .and_then(|ts: String| {
                         let s = ts.replace(',', ".");
+                        
                         if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%.3f") {
                             Some(dt.and_utc().timestamp_millis())
                         } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.3f") {
+                            Some(dt.and_utc().timestamp_millis())
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S.%f") {
+                            Some(dt.and_utc().timestamp_millis())
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S.%f") {
                             Some(dt.and_utc().timestamp_millis())
                         } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
                             Some(dt.and_utc().timestamp_millis())
                         } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S") {
                             Some(dt.and_utc().timestamp_millis())
-                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.f%:z") {
+                        } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S.%f%:z") {
                             Some(dt.and_utc().timestamp_millis())
                         } else if let Ok(dt) = chrono::DateTime::parse_from_str(&s, "%d/%b/%Y:%H:%M:%S %z") {
                             Some(dt.timestamp_millis())
@@ -297,7 +300,7 @@ pub async fn parse_log(
                     .unwrap_or(0);
                 
                 let level = event.level
-                    .map(|l| LogLevel::from_str(&l))
+                    .map(|l: String| LogLevel::from_str(&l))
                     .unwrap_or(LogLevel::Other);
                 
                 let source = event.source.unwrap_or_default();
