@@ -109,7 +109,7 @@ impl HighlightEngine {
             entry.extra.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(" "));
 
         // 1. Field rules (highest priority)
-        self.process_field_rules(entry, &compiled.field_rules, &mut spans);
+        self.process_field_rules(entry, &compiled.field_rules, &raw_content, &mut spans);
 
         // 2. Keyword rules
         self.process_keyword_rules(&raw_content, compiled, &mut spans);
@@ -126,69 +126,82 @@ impl HighlightEngine {
         spans
     }
 
-    fn process_field_rules(&self, entry: &LogEntry, rules: &[(String, HashMap<String, String>)], spans: &mut Vec<HighlightSpan>) {
+    fn process_field_rules(&self, entry: &LogEntry, rules: &[(String, HashMap<String, String>)], raw_content: &str, spans: &mut Vec<HighlightSpan>) {
         for (field, style_map) in rules {
             match field.as_str() {
                 "level" => {
-                    let level_str = entry.level.as_str();
-                    if let Some(style) = style_map.get(level_str) {
-                        // Find level in the raw content
-                        let raw_content = format!("{} {} {}", entry.source_str(), entry.message_str(), 
-                            entry.extra.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(" "));
-                        if let Some(start) = raw_content.find(level_str) {
-                            let end = start + level_str.len();
-                            spans.push(HighlightSpan {
-                                start,
-                                end,
-                                class: style.clone(),
-                            });
-                        }
-                    }
+                    self.process_level_field(entry, style_map, raw_content, spans);
                 }
                 "source" => {
-                    let source_str = entry.source_str();
-                    if !source_str.is_empty() && source_str != "Unknown" {
-                        if let Some(style) = style_map.get(source_str) {
-                            if let Some(start) = source_str.find(source_str) {
-                                let end = start + source_str.len();
-                                spans.push(HighlightSpan {
-                                    start,
-                                    end,
-                                    class: style.clone(),
-                                });
-                            }
-                        }
-                    }
+                    self.process_source_field(entry, style_map, raw_content, spans);
                 }
                 "message" => {
-                    let message_str = entry.message_str();
-                    if let Some(style) = style_map.get(message_str) {
-                        let source_len = entry.source_str().len() + 1; // +1 for space
-                        spans.push(HighlightSpan {
-                            start: source_len,
-                            end: source_len + message_str.len(),
-                            class: style.clone(),
-                        });
-                    }
+                    self.process_message_field(entry, style_map, spans);
                 }
                 _ => {
-                    // Extra fields
-                    if let Some(value) = entry.extra.get(field) {
-                        if let Some(style) = style_map.get(value) {
-                            let raw_content = format!("{} {} {}", entry.source_str(), entry.message_str(), 
-                                entry.extra.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(" "));
-                            let pattern = format!("{}={}", field, value);
-                            if let Some(start) = raw_content.find(&pattern) {
-                                let end = start + pattern.len();
-                                spans.push(HighlightSpan {
-                                    start,
-                                    end,
-                                    class: style.clone(),
-                                });
-                            }
-                        }
-                    }
+                    self.process_extra_field(entry, field, style_map, spans);
                 }
+            }
+        }
+    }
+
+    fn process_level_field(&self, entry: &LogEntry, style_map: &HashMap<String, String>, raw_content: &str, spans: &mut Vec<HighlightSpan>) {
+        let level_str = entry.level.as_str();
+        if let Some(style) = style_map.get(level_str) {
+            if let Some(start) = raw_content.find(level_str) {
+                let end = start + level_str.len();
+                spans.push(HighlightSpan {
+                    start,
+                    end,
+                    class: style.clone(),
+                });
+            }
+        }
+    }
+
+    fn process_source_field(&self, entry: &LogEntry, style_map: &HashMap<String, String>, raw_content: &str, spans: &mut Vec<HighlightSpan>) {
+        let source_str = entry.source_str();
+        if !source_str.is_empty() && source_str != "Unknown" {
+            if let Some(style) = style_map.get(source_str) {
+                if let Some(start) = raw_content.find(source_str) {
+                    let end = start + source_str.len();
+                    spans.push(HighlightSpan {
+                        start,
+                        end,
+                        class: style.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    fn process_message_field(&self, entry: &LogEntry, style_map: &HashMap<String, String>, spans: &mut Vec<HighlightSpan>) {
+        let message_str = entry.message_str();
+        if let Some(style) = style_map.get(message_str) {
+            let source_len = entry.source_str().len() + 1; // +1 for space
+            spans.push(HighlightSpan {
+                start: source_len,
+                end: source_len + message_str.len(),
+                class: style.clone(),
+            });
+        }
+    }
+
+    fn process_extra_field(&self, entry: &LogEntry, field: &str, style_map: &HashMap<String, String>, spans: &mut Vec<HighlightSpan>) {
+        if let Some(value) = entry.extra.get(field) {
+            // Try to get style for specific value first, then use default
+            let style = style_map.get(value).or_else(|| style_map.get("default")).or_else(|| style_map.get(""));
+            if let Some(style) = style {
+                // For extra fields, we need to handle them differently
+                // The front-end displays extra fields separately, not as part of the message
+                // So we'll add a special span that the front-end can recognize
+                let span_class = format!("extra-field-{}-{}", field, style);
+                // Set start and end to 0 as a placeholder for front-end processing
+                spans.push(HighlightSpan {
+                    start: 0,
+                    end: 0,
+                    class: span_class,
+                });
             }
         }
     }

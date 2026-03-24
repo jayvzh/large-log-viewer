@@ -16,6 +16,18 @@
   - 修复：移除模板排序逻辑，保持用户选择的模板顺序
   - 文件：[template.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/parser/template.rs)
 
+- **修复高亮引擎问题**：
+  - 问题：highlight_engine.rs 中存在调试输出、逻辑错误和代码重复问题
+  - 原因：生产代码中包含 println! 语句，source 字段查找逻辑错误，重复构建 raw_content，方法过长
+  - 修复：
+    - 移除所有 println! 调试语句
+    - 修复 source 字段查找逻辑，改为在 raw_content 中查找
+    - 提取 raw_content 构建逻辑，避免重复构建
+    - 为 extra 字段的 span 添加注释说明
+    - 重构 process_field_rules 方法，拆分为多个小方法：process_level_field、process_source_field、process_message_field、process_extra_field
+    - 提高代码可维护性和可读性
+  - 文件：[highlight_engine.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_engine.rs)
+
 ### Added
 
 - **实现动态隐藏来源列功能**：
@@ -53,6 +65,13 @@
   - 切换模板时自动加载对应的列宽配置
   - 删除模板时自动删除对应的列宽配置，避免产生垃圾数据
   - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)、[templateStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/templateStore.ts)
+
+- **实现 loglist 多行选择和复制功能**：
+  - 支持 Ctrl+点击：切换行选中状态
+  - 支持 Shift+点击：选择连续范围的行
+  - 支持 Ctrl+C：复制选中的日志行
+  - 复制内容包含所有可见列的信息，按列顺序排列
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
 
 ### Changed
 

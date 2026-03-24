@@ -18,6 +18,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
   
 
   let selectedLogId = $state<number | null>(null);
+  let selectedLogIds = $state<Set<number>>(new Set());
   let activeLevel = $state<string>('all');
   let logCount = $state<number>(0);
   let isDragging = $state(false);
@@ -145,6 +146,10 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
   function handleLogSelect(id: number) {
     selectedLogId = id;
+  }
+
+  function handleSelectMultiple(ids: Set<number>) {
+    selectedLogIds = ids;
   }
 
   async function handleLevelChange(level: string) {
@@ -315,6 +320,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
       <LogList 
         selectedId={selectedLogId}
         onSelect={handleLogSelect}
+        onSelectMultiple={handleSelectMultiple}
       />
     </div>
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -326,7 +332,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
       aria-orientation="horizontal"
     ></div>
     <div class="log-detail-panel" style="height: {detailHeight}px;">
-      <LogDetail logId={selectedLogId} />
+      <LogDetail logId={selectedLogId} selectedIds={selectedLogIds} />
     </div>
   </div>
   <StatusBar 
