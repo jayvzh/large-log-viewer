@@ -4,13 +4,94 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+/// 将 style 字符串转换为 CSS 类名
+fn style_to_css_class(style: &str) -> String {
+    let mut classes = Vec::new();
+    let style_lower = style.to_lowercase();
+    
+    // 检查是否是 CSS 语法（包含冒号）
+    if style_lower.contains(':') {
+        for part in style_lower.split(';') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            
+            if let Some((property, value)) = part.split_once(':') {
+                let property = property.trim();
+                let value = value.trim();
+                
+                match property {
+                    "color" => {
+                        if value.starts_with('#') {
+                            let color = value.trim_start_matches('#');
+                            classes.push(format!("hl-{}", color));
+                        } else {
+                             match value {
+                                "red" => classes.push("hl-red".to_string()),
+                                "green" => classes.push("hl-green".to_string()),
+                                "blue" => classes.push("hl-blue".to_string()),
+                                "yellow" => classes.push("hl-yellow".to_string()),
+                                "cyan" => classes.push("hl-cyan".to_string()),
+                                "purple" => classes.push("hl-purple".to_string()),
+                                "gray" | "grey" => classes.push("hl-gray".to_string()),
+                                _ => {
+                                    // 对于未知的颜色值，尝试直接使用它作为类名的一部分
+                                    classes.push(format!("hl-{}", value));
+                                }
+                            }
+                        }
+                    }
+                    "font-weight" if value == "bold" => {
+                        classes.push("hl-bold".to_string());
+                    }
+                    "font-style" if value == "italic" => {
+                        classes.push("hl-italic".to_string());
+                    }
+                    "text-decoration" if value == "underline" => {
+                        classes.push("hl-underline".to_string());
+                    }
+                    _ => {} // 忽略其他属性
+                }
+            }
+        }
+    } else {
+        // 处理空格分隔的样式
+        for part in style_lower.split_whitespace() {
+            if part.starts_with('#') {
+                let color = part.trim_start_matches('#');
+                classes.push(format!("hl-{}", color));
+            } else {
+                match part {
+                    "red" => classes.push("hl-red".to_string()),
+                    "green" => classes.push("hl-green".to_string()),
+                    "blue" => classes.push("hl-blue".to_string()),
+                    "yellow" => classes.push("hl-yellow".to_string()),
+                    "cyan" => classes.push("hl-cyan".to_string()),
+                    "purple" => classes.push("hl-purple".to_string()),
+                    "gray" | "grey" => classes.push("hl-gray".to_string()),
+                    "bold" => classes.push("hl-bold".to_string()),
+                    "italic" => classes.push("hl-italic".to_string()),
+                    "underline" => classes.push("hl-underline".to_string()),
+                    _ => {
+                        // 对于未知的样式值，尝试直接使用它作为类名的一部分
+                        classes.push(format!("hl-{}", part));
+                    }
+                }
+            }
+        }
+    }
+    
+    classes.join(" ")
+}
+
 pub struct HighlightEngine {
     profiles: Vec<HighlightProfile>,
     cached_engines: RwLock<HashMap<String, Arc<CompiledProfile>>>,
 }
 
 struct CompiledProfile {
-    field_rules: Vec<(String, HashMap<String, String>)>,
+    field_rules: Vec<(String, HashMap<String, String>, Option<String>)>,
     keyword_automaton: Option<AhoCorasick>,
     keyword_styles: HashMap<String, String>,
     token_regexes: Vec<(Regex, String)>,
@@ -62,8 +143,12 @@ impl HighlightEngine {
 
         for rule in &profile.rules {
             match rule {
-                HighlightRule::Field { field, style_map } => {
-                    field_rules.push((field.clone(), style_map.clone()));
+                HighlightRule::Field { field, style_map, default_style } => {
+                    let mut a: HashMap<String, String> = HashMap::new();
+                    for (k, v) in style_map {
+                        a.insert(k.to_lowercase(), v.clone());
+                    }
+                    field_rules.push((field.clone(), a, default_style.clone()));
                 }
                 HighlightRule::Keyword { words, style } => {
                     for word in words {
@@ -105,20 +190,21 @@ impl HighlightEngine {
 
     fn process_with_compiled(&self, entry: &LogEntry, compiled: &CompiledProfile) -> Vec<HighlightSpan> {
         let mut spans = Vec::new();
-        let raw_content = format!("{} {} {}", entry.source_str(), entry.message_str(), 
-            entry.extra.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(" "));
 
         // 1. Field rules (highest priority)
-        self.process_field_rules(entry, &compiled.field_rules, &raw_content, &mut spans);
+        self.apply_field_rules(entry, &compiled.field_rules, &mut spans);
+        
+        // 2. Keyword, Token, Regex rules on message
+        let message = entry.message_str();
+        let offset = 0;
+        self.apply_keyword_rules(message, offset, compiled, &mut spans);
+        self.apply_token_rules(message, offset, &compiled.token_regexes, &mut spans);
+        self.apply_regex_rules(message, offset, &compiled.regex_regexes, &mut spans);
 
-        // 2. Keyword rules
-        self.process_keyword_rules(&raw_content, compiled, &mut spans);
-
-        // 3. Token rules
-        self.process_token_rules(&raw_content, &compiled.token_regexes, &mut spans);
-
-        // 4. Regex rules (lowest priority)
-        self.process_regex_rules(&raw_content, &compiled.regex_regexes, &mut spans);
+        // 3. Keyword, Token, Regex rules on extra fields
+        for (field, value) in &entry.extra {
+            self.apply_rules_to_extra_field(field, value, compiled, &mut spans);
+        }
 
         // Merge overlapping spans
         self.merge_spans(&mut spans);
@@ -126,121 +212,134 @@ impl HighlightEngine {
         spans
     }
 
-    fn process_field_rules(&self, entry: &LogEntry, rules: &[(String, HashMap<String, String>)], raw_content: &str, spans: &mut Vec<HighlightSpan>) {
-        for (field, style_map) in rules {
-            match field.as_str() {
-                "level" => {
-                    self.process_level_field(entry, style_map, raw_content, spans);
-                }
-                "source" => {
-                    self.process_source_field(entry, style_map, raw_content, spans);
-                }
-                "message" => {
-                    self.process_message_field(entry, style_map, spans);
-                }
+    fn apply_field_rules(&self, entry: &LogEntry, rules: &[(String, HashMap<String, String>, Option<String>)], spans: &mut Vec<HighlightSpan>) {
+        for (field, style_map, default_style) in rules {
+            let (value, offset): (&str, usize) = match field.as_str() {
+                "level" => (entry.level.as_str(), 0),
+                "source" => (entry.source_str(), 0),
+                "message" => (entry.message_str(), 0),
                 _ => {
-                    self.process_extra_field(entry, field, style_map, spans);
+                    if let Some(val) = entry.extra.get(field) {
+                        (val.as_str(), 0)
+                    } else {
+                        ("", 0)
+                    }
                 }
+            };
+
+            if value.is_empty() {
+                continue;
             }
-        }
-    }
 
-    fn process_level_field(&self, entry: &LogEntry, style_map: &HashMap<String, String>, raw_content: &str, spans: &mut Vec<HighlightSpan>) {
-        let level_str = entry.level.as_str();
-        if let Some(style) = style_map.get(level_str) {
-            if let Some(start) = raw_content.find(level_str) {
-                let end = start + level_str.len();
-                spans.push(HighlightSpan {
-                    start,
-                    end,
-                    class: style.clone(),
-                });
-            }
-        }
-    }
-
-    fn process_source_field(&self, entry: &LogEntry, style_map: &HashMap<String, String>, raw_content: &str, spans: &mut Vec<HighlightSpan>) {
-        let source_str = entry.source_str();
-        if !source_str.is_empty() && source_str != "Unknown" {
-            if let Some(style) = style_map.get(source_str) {
-                if let Some(start) = raw_content.find(source_str) {
-                    let end = start + source_str.len();
-                    spans.push(HighlightSpan {
-                        start,
-                        end,
-                        class: style.clone(),
-                    });
-                }
-            }
-        }
-    }
-
-    fn process_message_field(&self, entry: &LogEntry, style_map: &HashMap<String, String>, spans: &mut Vec<HighlightSpan>) {
-        let message_str = entry.message_str();
-        if let Some(style) = style_map.get(message_str) {
-            let source_len = entry.source_str().len() + 1; // +1 for space
-            spans.push(HighlightSpan {
-                start: source_len,
-                end: source_len + message_str.len(),
-                class: style.clone(),
-            });
-        }
-    }
-
-    fn process_extra_field(&self, entry: &LogEntry, field: &str, style_map: &HashMap<String, String>, spans: &mut Vec<HighlightSpan>) {
-        if let Some(value) = entry.extra.get(field) {
-            // Try to get style for specific value first, then use default
-            let style = style_map.get(value).or_else(|| style_map.get("default")).or_else(|| style_map.get(""));
+            let style = style_map.get(&value.to_lowercase())
+                .or_else(|| default_style.as_ref());
+            
             if let Some(style) = style {
-                // For extra fields, we need to handle them differently
-                // The front-end displays extra fields separately, not as part of the message
-                // So we'll add a special span that the front-end can recognize
-                let span_class = format!("extra-field-{}-{}", field, style);
-                // Set start and end to 0 as a placeholder for front-end processing
-                spans.push(HighlightSpan {
-                    start: 0,
-                    end: 0,
-                    class: span_class,
-                });
+                let css_class = style_to_css_class(style);
+                if field == "level" || field == "source" || field == "message" {
+                    spans.push(HighlightSpan {
+                        start: offset,
+                        end: offset + value.len(),
+                        class: css_class,
+                    });
+                } else {
+                    let span_class = format!("extra-field-{}-{}", field, css_class);
+                    if !spans.iter().any(|s| s.class == span_class) {
+                        spans.push(HighlightSpan { start: 0, end: 0, class: span_class });
+                    }
+                }
             }
         }
     }
 
-    fn process_keyword_rules(&self, content: &str, compiled: &CompiledProfile, spans: &mut Vec<HighlightSpan>) {
+    fn apply_keyword_rules(&self, text: &str, offset: usize, compiled: &CompiledProfile, spans: &mut Vec<HighlightSpan>) {
         if let Some(automaton) = &compiled.keyword_automaton {
-            for mat in automaton.find_iter(content) {
-                let word = &content[mat.start()..mat.end()];
+            for mat in automaton.find_iter(text) {
+                let word = &text[mat.start()..mat.end()];
                 if let Some(style) = compiled.keyword_styles.get(word) {
+                    let css_class = style_to_css_class(style);
                     spans.push(HighlightSpan {
-                        start: mat.start(),
-                        end: mat.end(),
-                        class: style.clone(),
+                        start: offset + mat.start(),
+                        end: offset + mat.end(),
+                        class: css_class,
                     });
                 }
             }
         }
     }
 
-    fn process_token_rules(&self, content: &str, regexes: &[(Regex, String)], spans: &mut Vec<HighlightSpan>) {
+    fn apply_token_rules(&self, text: &str, offset: usize, regexes: &[(Regex, String)], spans: &mut Vec<HighlightSpan>) {
         for (regex, style) in regexes {
-            for mat in regex.find_iter(content) {
+            for mat in regex.find_iter(text) {
+                let css_class = style_to_css_class(style);
                 spans.push(HighlightSpan {
-                    start: mat.start(),
-                    end: mat.end(),
-                    class: style.clone(),
+                    start: offset + mat.start(),
+                    end: offset + mat.end(),
+                    class: css_class,
                 });
             }
         }
     }
 
-    fn process_regex_rules(&self, content: &str, regexes: &[(Regex, String)], spans: &mut Vec<HighlightSpan>) {
+    fn apply_regex_rules(&self, text: &str, offset: usize, regexes: &[(Regex, String)], spans: &mut Vec<HighlightSpan>) {
         for (regex, style) in regexes {
-            for mat in regex.find_iter(content) {
+            for mat in regex.find_iter(text) {
+                let css_class = style_to_css_class(style);
                 spans.push(HighlightSpan {
-                    start: mat.start(),
-                    end: mat.end(),
-                    class: style.clone(),
+                    start: offset + mat.start(),
+                    end: offset + mat.end(),
+                    class: css_class,
                 });
+            }
+        }
+    }
+
+    fn apply_rules_to_extra_field(&self, field: &str, value: &str, compiled: &CompiledProfile, spans: &mut Vec<HighlightSpan>) {
+        // Apply regex rules to find all matches within the extra field value
+        // This allows highlighting specific parts of the field (like HTTP methods in request)
+        for (regex, style) in &compiled.regex_regexes {
+            for _mat in regex.find_iter(value) {
+                let css_class = style_to_css_class(style);
+                let span_class = format!("extra-field-{}-{}", field, css_class);
+                
+                if !spans.iter().any(|s| s.class == span_class) {
+                    spans.push(HighlightSpan { 
+                        start: 0, 
+                        end: 0, 
+                        class: span_class,
+                    });
+                }
+            }
+        }
+        
+        // Also check keyword and token rules
+        let mut style = None;
+
+        // Keyword
+        if let Some(automaton) = &compiled.keyword_automaton {
+            if let Some(mat) = automaton.find_iter(value).next() {
+                let word = &value[mat.start()..mat.end()];
+                if let Some(s) = compiled.keyword_styles.get(word) {
+                    style = Some(s.clone());
+                }
+            }
+        }
+        
+        // Token
+        if style.is_none() {
+            for (regex, s) in &compiled.token_regexes {
+                if regex.is_match(value) {
+                    style = Some(s.clone());
+                    break;
+                }
+            }
+        }
+
+        if let Some(s) = style {
+            let css_class = style_to_css_class(&s);
+            let span_class = format!("extra-field-{}-{}", field, css_class);
+            if !spans.iter().any(|s| s.class == span_class) {
+                spans.push(HighlightSpan { start: 0, end: 0, class: span_class });
             }
         }
     }
@@ -250,18 +349,40 @@ impl HighlightEngine {
             return;
         }
 
-        // Sort spans by start position
-        spans.sort_by(|a, b| a.start.cmp(&b.start));
+        // Separate extra field spans
+        let mut extra_spans = Vec::new();
+        let mut content_spans = Vec::new();
+        for span in spans.drain(..) {
+            if span.start == 0 && span.end == 0 {
+                extra_spans.push(span);
+            } else {
+                content_spans.push(span);
+            }
+        }
+
+        if content_spans.is_empty() {
+            *spans = extra_spans;
+            return;
+        }
+
+        // Sort content spans by start position
+        content_spans.sort_by(|a, b| a.start.cmp(&b.start));
 
         let mut merged = Vec::new();
-        let mut current = spans[0].clone();
+        let mut current = content_spans[0].clone();
 
-        for span in spans.iter().skip(1) {
-            if span.start <= current.end {
-                // Overlapping or adjacent, merge
+        for span in content_spans.iter().skip(1) {
+            if span.start < current.end {
+                // Overlapping, merge classes. Higher priority (current) styles are preserved.
+                let mut current_classes: Vec<_> = current.class.split_whitespace().collect();
+                let new_classes: Vec<_> = span.class.split_whitespace().collect();
+                for new_class in new_classes {
+                    if !current_classes.contains(&new_class) {
+                        current_classes.push(new_class);
+                    }
+                }
+                current.class = current_classes.join(" ");
                 current.end = current.end.max(span.end);
-                // Use the higher priority style (earlier rules have higher priority)
-                // Since we process rules in priority order, current span has higher priority
             } else {
                 merged.push(current);
                 current = span.clone();
@@ -270,5 +391,6 @@ impl HighlightEngine {
         merged.push(current);
 
         *spans = merged;
+        spans.append(&mut extra_spans);
     }
 }

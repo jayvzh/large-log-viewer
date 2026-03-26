@@ -15,59 +15,5 @@
     "has_source": true,
     "priority": 0,
     "default_highlight": "general_default"
-  },
-  {
-    "name": "Linux Syslog",
-    "pattern": "^(?P<timestamp>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+[+-]\\d{2}:\\d{2})\\s+(?P<hostname>\\S+)\\s+(?P<source>\\S+):\\s+(?P<message>.+)$",
-    "field_mapping": {},
-    "is_builtin": true,
-    "created_at": 1774281500701,
-    "updated_at": 1774281500701,
-    "extra_fields": [
-      "hostname"
-    ],
-    "has_level": false,
-    "has_timestamp": true,
-    "has_source": true,
-    "priority": 100,
-    "default_highlight": "general_default"
-  },
-  {
-    "name": "Linux Auth Log",
-    "pattern": "^(?P<timestamp>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+[+-]\\d{2}:\\d{2})\\s+(?P<hostname>\\S+)\\s+(?P<source>\\S+?)(?:\\[\\d+\\])?:\\s+(?P<message>.+)$",
-    "field_mapping": {},
-    "is_builtin": true,
-    "created_at": 1774281500701,
-    "updated_at": 1774281500701,
-    "extra_fields": [
-      "hostname"
-    ],
-    "has_level": false,
-    "has_timestamp": true,
-    "has_source": true,
-    "priority": 100,
-    "default_highlight": "security_default"
-  },
-  {
-    "name": "Nginx Access Log",
-    "pattern": "^(?P<ip>\\S+)\\s+-\\s+(?P<user>\\S+)\\s+\\[(?P<timestamp>[^\\]]+)\\]\\s+\"(?P<request>[^\"]+)\"\\s+(?P<status>\\d+)\\s+(?P<size>\\S+)\\s+\"(?P<referer>[^\"]*)\"\\s+\"(?P<user_agent>[^\"]*)\"(?:\\s+\"(?P<extra>[^\"]*)\")?$",
-    "field_mapping": {},
-    "is_builtin": true,
-    "created_at": 1774281500701,
-    "updated_at": 1774281500701,
-    "extra_fields": [
-      "ip",
-      "user",
-      "request",
-      "status",
-      "size",
-      "referer",
-      "user_agent"
-    ],
-    "has_level": false,
-    "has_timestamp": true,
-    "has_source": false,
-    "priority": 100,
-    "default_highlight": "web_default"
   }
 ]

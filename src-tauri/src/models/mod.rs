@@ -173,6 +173,7 @@ pub struct LogStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FileInfo {
     pub id: u64,
     pub path: String,
@@ -183,6 +184,7 @@ pub struct FileInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParseProgress {
     pub file_id: u64,
     pub total_bytes: u64,
@@ -194,6 +196,7 @@ pub struct ParseProgress {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub theme: String,
     pub encoding: String,
@@ -219,6 +222,7 @@ impl Default for AppSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CacheInfo {
     pub entries_cleared: u64,
     pub data_dir: String,
@@ -227,24 +231,29 @@ pub struct CacheInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LogTemplate {
     pub name: String,
     pub pattern: String,
+    #[serde(rename = "fieldMapping")]
     pub field_mapping: HashMap<String, String>,
+    #[serde(rename = "isBuiltin")]
     pub is_builtin: bool,
+    #[serde(rename = "createdAt")]
     pub created_at: i64,
+    #[serde(rename = "updatedAt")]
     pub updated_at: i64,
-    #[serde(default)]
+    #[serde(default, rename = "extraFields")]
     pub extra_fields: Vec<String>,
-    #[serde(default)]
+    #[serde(default, rename = "hasLevel")]
     pub has_level: bool,
-    #[serde(default)]
+    #[serde(default, rename = "hasTimestamp")]
     pub has_timestamp: bool,
-    #[serde(default)]
+    #[serde(default, rename = "hasSource")]
     pub has_source: bool,
     #[serde(default)]
     pub priority: u32,
-    #[serde(default)]
+    #[serde(default, rename = "defaultHighlight")]
     pub default_highlight: Option<String>,
 }
 
@@ -258,6 +267,7 @@ pub struct LogEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TemplateTestResult {
     pub success: bool,
     pub event: Option<LogEvent>,
@@ -265,6 +275,7 @@ pub struct TemplateTestResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DetectResult {
     pub template_name: String,
     pub match_rate: f32,
@@ -273,6 +284,7 @@ pub struct DetectResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtraFilterCondition {
     pub field: String,
     pub operator: String,
@@ -353,6 +365,8 @@ pub enum HighlightRule {
         field: String,
         #[serde(default)]
         style_map: HashMap<String, String>,
+        #[serde(default)]
+        default_style: Option<String>,
     },
     Token {
         pattern: String,

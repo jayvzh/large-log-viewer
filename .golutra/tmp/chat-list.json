@@ -1,0 +1,7 @@
+{
+  "type": "chat.conversations.list",
+  "payload": {
+    "userId": "01KMJPMDADDTR3KM9SXK202M6G",
+    "workspacePath": "E:\\Code\\github\\large-log-viewer"
+  }
+}

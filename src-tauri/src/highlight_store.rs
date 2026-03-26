@@ -130,6 +130,7 @@ impl HighlightStore {
                             ("DEBUG".to_string(), "#999999".to_string()),
                             ("TRACE".to_string(), "#777777".to_string()),
                         ]),
+                        default_style: None,
                     },
                     crate::models::HighlightRule::Keyword {
                         words: vec!["failed", "error", "exception", "timeout", "refused", "critical", "alert"].into_iter().map(|s| s.to_string()).collect(),
@@ -160,15 +161,6 @@ impl HighlightStore {
                 name: "web_default".to_string(),
                 rules: vec![
                     crate::models::HighlightRule::Field {
-                        field: "level".to_string(),
-                        style_map: std::collections::HashMap::from([
-                            ("FATAL".to_string(), "#ff4444 bold".to_string()),
-                            ("ERROR".to_string(), "#ff6666".to_string()),
-                            ("WARN".to_string(), "#ffaa00".to_string()),
-                            ("INFO".to_string(), "#66b3ff".to_string()),
-                        ]),
-                    },
-                    crate::models::HighlightRule::Field {
                         field: "status".to_string(),
                         style_map: std::collections::HashMap::from([
                             ("200".to_string(), "#66cc66 bold".to_string()),
@@ -183,15 +175,23 @@ impl HighlightStore {
                             ("502".to_string(), "#ff4444 bold".to_string()),
                             ("503".to_string(), "#ff4444 bold".to_string()),
                         ]),
+                        default_style: None,
                     },
-                    crate::models::HighlightRule::Field {
-                        field: "method".to_string(),
-                        style_map: std::collections::HashMap::from([
-                            ("GET".to_string(), "#66cc66".to_string()),
-                            ("POST".to_string(), "#66ccff".to_string()),
-                            ("PUT".to_string(), "#ffaa00".to_string()),
-                            ("DELETE".to_string(), "#ff6666".to_string()),
-                        ]),
+                    crate::models::HighlightRule::Regex {
+                        pattern: r#""GET\b"#.to_string(),
+                        style: "#66cc66".to_string(),
+                    },
+                    crate::models::HighlightRule::Regex {
+                        pattern: r#""POST\b"#.to_string(),
+                        style: "#66ccff".to_string(),
+                    },
+                    crate::models::HighlightRule::Regex {
+                        pattern: r#""PUT\b"#.to_string(),
+                        style: "#ffaa00".to_string(),
+                    },
+                    crate::models::HighlightRule::Regex {
+                        pattern: r#""DELETE\b"#.to_string(),
+                        style: "#ff6666".to_string(),
                     },
                     crate::models::HighlightRule::Regex {
                         pattern: r"\b\d{1,3}(\.\d{1,3}){3}\b".to_string(),

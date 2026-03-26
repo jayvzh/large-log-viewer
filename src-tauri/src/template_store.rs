@@ -24,21 +24,35 @@ impl TemplateStore {
         // 在开发模式下，使用 sample/data 目录作为模板存储路径
         // 在生产模式下，使用可执行文件所在目录的 data 目录
         if let Ok(exe_path) = std::env::current_exe() {
+            println!("DEBUG: current_exe = {:?}", exe_path);
             if let Some(exe_dir) = exe_path.parent() {
-                // 检查是否是开发模式（临时目录）
-                if exe_dir.to_string_lossy().contains("AppData\\Local\\Temp") {
+                println!("DEBUG: exe_dir = {:?}", exe_dir);
+                // 检查是否是开发模式（通过 CARGO_MANIFEST_DIR 环境变量或临时目录判断）
+                let is_dev = std::env::var("CARGO_MANIFEST_DIR").is_ok() || 
+                             exe_dir.to_string_lossy().contains("AppData\\Local\\Temp") ||
+                             exe_dir.to_string_lossy().contains("target");
+                
+                if is_dev {
                     // 开发模式：使用 sample/data 目录
-                    let project_root = PathBuf::from("e:\\Code\\github\\large-log-viewer");
-                    return project_root.join("sample").join("data").join("templates.json");
+                    let project_root = std::env::var("CARGO_MANIFEST_DIR")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|_| PathBuf::from("e:\\Code\\github\\large-log-viewer\\src-tauri"));
+                    let path = project_root.parent().unwrap().join("sample").join("data").join("templates.json");
+                    println!("DEBUG: dev mode, using path = {:?}", path);
+                    return path;
                 } else {
                     // 生产模式：使用可执行文件所在目录的 data 目录
-                    return exe_dir.join("data").join("templates.json");
+                    let path = exe_dir.join("data").join("templates.json");
+                    println!("DEBUG: prod mode, using path = {:?}", path);
+                    return path;
                 }
             }
         }
         
         // 默认使用当前目录的 data 目录
-        PathBuf::from("data").join("templates.json")
+        let path = PathBuf::from("data").join("templates.json");
+        println!("DEBUG: default, using path = {:?}", path);
+        path
     }
     
     pub fn get_templates_path(&self) -> &PathBuf {
@@ -114,9 +128,22 @@ impl TemplateStore {
     
     pub async fn get_all_templates(&self) -> Result<Vec<LogTemplate>, String> {
         let mut templates = self.load_templates().await?;
-        let mut builtin = LogTemplateParser::get_builtin_templates();
-        templates.append(&mut builtin);
-        Ok(templates)
+        let builtin = LogTemplateParser::get_builtin_templates();
+        
+        // 过滤掉用户模板中可能存在的内置模板（通过名称去重）
+        let builtin_names: std::collections::HashSet<&String> = builtin.iter().map(|t| &t.name).collect();
+        templates.retain(|t| !builtin_names.contains(&t.name));
+        
+        // 合并用户模板和内置模板
+        let mut result = templates;
+        result.extend(builtin);
+        
+        println!("DEBUG: get_all_templates returning {} templates ({} user + {} builtin)", 
+                 result.len(), 
+                 result.iter().filter(|t| !t.is_builtin).count(),
+                 result.iter().filter(|t| t.is_builtin).count());
+        
+        Ok(result)
     }
     
     pub async fn get_template(&self, name: &str) -> Result<Option<LogTemplate>, String> {

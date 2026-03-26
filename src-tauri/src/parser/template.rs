@@ -95,7 +95,7 @@ impl LogTemplateParser {
         let now = chrono::Utc::now().timestamp_millis();
         vec![
             LogTemplate {
-                name: "Linux Syslog".to_string(),
+                name: "linux_syslog".to_string(),
                 pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<source>\S+):\s+(?P<message>.+)$".to_string(),
                 field_mapping: HashMap::new(),
                 is_builtin: true,
@@ -109,7 +109,7 @@ impl LogTemplateParser {
                 default_highlight: Some("general_default".to_string()),
             },
             LogTemplate {
-                name: "Linux Auth Log".to_string(),
+                name: "linux_auth_log".to_string(),
                 pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<source>\S+?)(?:\[\d+\])?:\s+(?P<message>.+)$".to_string(),
                 field_mapping: HashMap::new(),
                 is_builtin: true,
@@ -123,7 +123,7 @@ impl LogTemplateParser {
                 default_highlight: Some("security_default".to_string()),
             },
             LogTemplate {
-                name: "Nginx Access Log".to_string(),
+                name: "nginx_access_log".to_string(),
                 pattern: r#"^(?P<ip>\S+)\s+-\s+(?P<user>\S+)\s+\[(?P<timestamp>[^\]]+)\]\s+"(?P<request>[^"]+)"\s+(?P<status>\d+)\s+(?P<size>\S+)\s+"(?P<referer>[^"]*)"\s+"(?P<user_agent>[^"]*)"(?:\s+"(?P<extra>[^"]*)")?$"#.to_string(),
                 field_mapping: HashMap::new(),
                 is_builtin: true,

@@ -1,5 +1,244 @@
 # 变更日志
 
+## v0.6.8 (2026-03-26)
+
+### Fixed
+
+- **修复模板切换和自动检测问题**：
+  - 问题 1：手动切换模板后，loglist 内容变空白，需要手动点击打开才能载入
+  - 问题 2：自动检测模板失效，只有时间、级别、来源、内容几项，没有应用正确的模板
+  - 修复：在 `AppState.get_or_create_parser` 方法中，当选择自动检测时，清除之前的缓存，确保每次都重新检测
+  - 影响：现在模板切换会自动重新加载日志，自动检测模板功能恢复正常
+  - 文件：[commands/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/commands/mod.rs)
+
+- **修复模板字段序列化问题**：
+  - 问题：`LogTemplate` 结构体的 `field_mapping` 字段没有被正确重命名为驼峰命名
+  - 修复：为 `field_mapping` 字段添加 `#[serde(rename = "fieldMapping")]` 配置
+  - 影响：现在前端可以正确访问 `fieldMapping` 字段
+  - 文件：[models/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/models/mod.rs)
+
+### Changed
+
+- **统一内置模板命名风格**：
+  - 将内置日志模板的命名风格改为下划线风格，与内置高亮模板保持一致
+  - 变更：
+    - "Linux Syslog" → "linux_syslog"
+    - "Linux Auth Log" → "linux_auth_log"
+    - "Nginx Access Log" → "nginx_access_log"
+  - 影响：现在所有内置模板（日志模板和高亮模板）都使用统一的下划线命名风格
+  - 文件：[template.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/parser/template.rs)
+
+## v0.6.7 (2026-03-26)
+
+### Fixed
+
+- **修复模板字段序列化问题**：
+  - 问题 1：`LogTemplate` 结构体的字段序列化配置不完整，导致 `is_builtin` 等字段没有被正确重命名为驼峰命名
+  - 修复：为所有需要驼峰命名的字段添加显式的 `#[serde(rename = "...")]` 配置
+    - `is_builtin` → `isBuiltin`
+    - `created_at` → `createdAt`
+    - `updated_at` → `updatedAt`
+    - `extra_fields` → `extraFields`
+    - `has_level` → `hasLevel`
+    - `has_timestamp` → `hasTimestamp`
+    - `has_source` → `hasSource`
+    - `default_highlight` → `defaultHighlight`
+  - 影响：现在前端可以正确识别内置模板和用户自定义模板
+  - 文件：[models/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/models/mod.rs)
+
+- **修复前端模板字段名不匹配问题**：
+  - 问题：前端代码中仍然使用蛇形命名（`extra_fields`、`has_level`、`has_source`、`default_highlight`），但后端序列化为驼峰命名
+  - 修复：更新所有前端代码中的字段引用
+    - [templateStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/templateStore.ts)
+    - [FileBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FileBar.svelte)
+    - [TemplateEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateEditorModal.svelte)
+  - 影响：现在 extra 字段（如 ip、request、status 等）可以正确显示在日志列表中
+
+- **修复模板文件字段命名不匹配问题**：
+  - 问题：`sample/data/templates.json` 使用蛇形命名，但后端期望驼峰命名
+  - 修复：更新 JSON 文件，将所有字段改为驼峰命名
+  - 文件：[sample/data/templates.json](file:///e:/Code/github/large-log-viewer/sample/data/templates.json)
+
+- **修复正则规则在 extra 字段中不生效的问题**：
+  - 问题：正则规则（如 HTTP 方法匹配）只应用在 message 字段，不应用在 extra 字段
+  - 原因：`apply_rules_to_extra_field` 函数只会为整个字段应用一个样式，而不是为字段内的每个匹配项应用样式
+  - 修复：改进 `apply_rules_to_extra_field` 函数，先应用 regex 规则查找所有匹配项，然后再应用 keyword 和 token 规则
+  - 影响：现在 HTTP 方法（GET、POST、PUT、DELETE）能在 request 字段中正确显示彩色
+  - 文件：[highlight_engine.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_engine.rs)
+
+- **移除 web_default 模板中多余的 level 字段规则**：
+  - 问题：Nginx Access Log 模板的 `has_level` 为 false，没有 level 字段，但 web_default 模板定义了 level 规则
+  - 修复：移除 web_default 模板中的 level 字段规则
+  - 文件：[highlight_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_store.rs)
+
+- **统一所有结构体的 serde 命名规范**：
+  - 问题：多个结构体缺少 `#[serde(rename_all = "camelCase")]` 配置，可能导致字段命名不一致
+  - 修复：为以下结构体添加 `#[serde(rename_all = "camelCase")]`：
+    - `FileInfo`
+    - `ParseProgress`
+    - `AppSettings`
+    - `CacheInfo`
+    - `LogTemplate`
+    - `TemplateTestResult`
+    - `DetectResult`
+    - `ExtraFilterCondition`
+  - 影响：确保所有序列化到前端的字段都使用驼峰命名，避免类似 `highlight_spans` vs `highlightSpans` 的问题
+  - 文件：[models/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/models/mod.rs)
+
+### Changed
+
+- **优化 web_default 高亮模板**：
+  - 移除了多余的 level 字段规则
+  - HTTP 方法高亮现在能正确工作（通过 regex 规则）
+  - GET: 绿色 (#66cc66)
+  - POST: 蓝色 (#66ccff)
+  - PUT: 橙色 (#ffaa00)
+  - DELETE: 红色 (#ff6666)
+
+## v0.6.6 (2026-03-26)
+
+### Fixed
+
+- **修复内置日志模板丢失问题**：
+  - 问题：`sample/data/templates.json` 文件中存储了内置模板的副本（`is_builtin: true`），导致模板重复或显示异常
+  - 原因：内置模板应该只在代码中定义，不应持久化到文件
+  - 修复：清理 `templates.json` 文件，移除内置模板的副本，只保留用户自定义模板
+  - 文件：[sample/data/templates.json](file:///e:/Code/github/large-log-viewer/sample/data/templates.json)
+
+### Changed
+
+- **优化高亮模板编辑界面说明**：
+  - 问题：原有的说明文字不够清晰，缺乏指导性
+  - 修复：重新设计帮助文档，采用分步骤引导式说明
+    - 1. 选择规则类型：详细说明关键词、字段、正则三种类型的适用场景
+    - 2. 设置样式：列出常用 CSS 属性及示例
+    - 3. 推荐配色方案：可视化展示错误/警告/成功/信息的配色示例
+    - 4. 实用示例：提供常见使用场景的具体操作步骤
+  - 文件：[HighlightEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/HighlightEditorModal.svelte)
+
+## v0.6.6 (2026-03-26)
+
+### Fixed
+
+- **修复高亮模板系统字段命名不匹配问题**：
+  - 问题：后端使用 `highlight_spans`（蛇形命名），前端期望 `highlightSpans`（驼峰命名），导致高亮数据丢失
+  - 原因：serde_json 默认将蛇形命名转换为驼峰命名，但前端接口定义和代码仍使用蛇形命名
+  - 修复：
+    1. 统一前端接口定义为 `highlightSpans`（驼峰命名）
+    2. 更新所有前端代码中的字段引用
+  - 影响：现在高亮数据能正确传递到前端并渲染
+  - 文件：
+    - [logStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/logStore.ts)
+    - [LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **添加动态颜色支持**：
+  - 问题：自定义高亮规则使用任意十六进制颜色（如 `#1e90ff`）时，前端没有对应的 CSS 类
+  - 修复：添加 `getHighlightStyleForExtraField` 函数，动态解析 `hl-XXXXXX` 格式的类名并应用对应的颜色样式
+  - 影响：现在可以使用任意十六进制颜色值定义高亮规则
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **修复 web_default 模板的 HTTP 方法高亮**：
+  - 问题：web_default 模板定义了 `method` 字段规则，但 Nginx Access Log 解析出的字段是 `request`（完整请求字符串）
+  - 修复：将 `method` 字段规则替换为 4 个 regex 规则，分别匹配 GET、POST、PUT、DELETE
+  - 颜色：
+    - GET: 绿色 (#66cc66)
+    - POST: 蓝色 (#66ccff)
+    - PUT: 橙色 (#ffaa00)
+    - DELETE: 红色 (#ff6666)
+  - 文件：[highlight_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_store.rs)
+
+### Changed
+
+- **清理 debug 输出**：
+  - 移除了所有调试用的 `eprintln!` 和 `console.log` 语句
+  - 保持代码整洁
+
+## v0.6.5 (2026-03-26)
+
+### Fixed
+
+- **修复高亮模板系统不生效的问题**：
+  - **问题 1：CSS 样式解析不健壮**
+    - 问题：`style_to_css_class` 函数在处理 CSS 语法（如 `color: blue;`）时，对于未预定义的颜色名称会直接忽略
+    - 修复：增强 `style_to_css_class` 函数，对于未预定义的颜色值，自动生成对应的 CSS 类名（如 `hl-blue`）
+    - 文件：[highlight_engine.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_engine.rs)
+  
+  - **问题 2：web_default 模板的 method 字段规则不匹配**
+    - 问题：web_default 高亮模板定义了 `method` 字段的 field 规则，但 Nginx Access Log 模板解析出的字段是 `request`（完整请求字符串如 "GET / HTTP/1.1"），而不是单独的 `method` 字段
+    - 修复：将 field 规则改为多个 regex 规则，分别匹配 GET、POST、PUT、DELETE 等 HTTP 方法，并为每种方法定义不同的颜色
+    - 文件：[highlights.json](file:///e:/Code/github/large-log-viewer/sample/highlights.json)
+  
+  - **问题 3：模板选择时未自动应用对应的默认高亮 profile**
+    - 问题：Nginx Access Log 模板的 `default_highlight` 设置为 `web_default`，但前端在选择模板时没有自动切换到对应的默认高亮 profile
+    - 修复：在 FileBar 组件的 `selectTemplate` 函数中添加逻辑，当选择模板时自动查找并选择对应的默认高亮 profile
+    - 文件：[FileBar.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/FileBar.svelte)
+
+### Changed
+
+- **优化 web_default 高亮规则**：
+  - 将 `method` 字段的 field 规则替换为 4 个 regex 规则（GET、POST、PUT、DELETE）
+  - GET: 绿色 (#66cc66)
+  - POST: 蓝色 (#66ccff)
+  - PUT: 橙色 (#ffaa00)
+  - DELETE: 红色 (#ff6666)
+  - 现在 HTTP 方法会在 request 列中正确显示彩色
+
+### Added
+
+- **添加测试日志文件**：
+  - 添加了 `sample/test_ip.log` 文件，用于测试 IP 字段的高亮显示
+  - 包含多条带有不同 IP 地址的日志记录，方便验证高亮规则是否生效
+
+## v0.6.4 (2026-03-26)
+
+### Fixed
+
+- **修复高亮模板系统不生效的问题**：
+  - 问题：自定义高亮模板（如 test 模板）中的 extra 字段高亮规则不生效，IP 字段无法显示为蓝色
+  - 原因：`apply_field_rules` 函数只尝试用字段值精确匹配 `style_map` 的键，不支持 `"default"` 键作为默认样式
+  - 修复：修改 `apply_field_rules` 函数，当找不到精确匹配时，回退到 `"default"` 键的样式
+  - 示例：现在 `{"type": "field", "field": "ip", "style_map": {"default": "color: blue;"}}` 可以正确应用蓝色样式
+  - 文件：[highlight_engine.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_engine.rs)
+
+### Changed
+
+- **优化高亮模板Field规则设计**：
+  - 新增：Field类型规则增加 `default_style` 字段，用于定义默认样式
+  - 改进：样式匹配逻辑改为先精确匹配 `style_map`，找不到则使用 `default_style`
+  - 好处：语义更清晰，不再需要在 `style_map` 中使用 `"default"` 键
+  - 示例：
+    ```json
+    {
+      "type": "field",
+      "field": "ip",
+      "style_map": {},
+      "default_style": "color: blue;"
+    }
+    ```
+  - 修改文件：
+    - [models/mod.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/models/mod.rs)
+    - [highlight_engine.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_engine.rs)
+    - [highlight_store.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_store.rs)
+    - [highlight.ts](file:///e:/Code/github/large-log-viewer/src/lib/types/highlight.ts)
+    - [HighlightEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/HighlightEditorModal.svelte)
+    - [highlights.json](file:///e:/Code/github/large-log-viewer/sample/highlights.json)
+
+## v0.6.3 (2026-03-25)
+
+### Fixed
+
+- **修复高亮引擎编译错误**：
+  - 问题：highlight_engine.rs 中存在编译错误，导致无法启动应用
+  - 原因：
+    - `LogEntry` 结构体没有 `level_str` 方法，应该使用 `level.as_str()`
+    - 类型推断问题，需要明确类型注解
+    - AhoCorasick 的 `find` 方法使用错误，应该使用 `find_iter`
+  - 修复：
+    - 将 `entry.level_str()` 改为 `entry.level.as_str()`
+    - 添加明确的类型注解 `(&str, usize)`
+    - 将 `automaton.find(value).next()` 改为 `automaton.find_iter(value).next()`
+  - 文件：[highlight_engine.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_engine.rs)
+
 ## v0.6.2 (2026-03-24)
 
 ### Fixed
@@ -165,6 +404,37 @@
   - 当日志模板没有设定高亮规则时，默认使用general_default
   - 新建日志模板页面，高亮模板下拉框默认选中general_default
   - 文件：[TemplateEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/TemplateEditorModal.svelte)、[logStore.ts](file:///e:/Code/github/large-log-viewer/src/lib/stores/logStore.ts)
+
+## v0.6.1 (2026-03-25)
+
+### Fixed
+
+- **修复高亮模板样式缺失问题**：
+  - 问题：高亮模板的内置规则没有对应的CSS样式
+  - 修复：在LogList.svelte中添加了完整的高亮样式定义，包括颜色类、粗体、斜体、下划线等
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **修复后端高亮样式转换问题**：
+  - 问题：后端生成的CSS类名与前端不匹配
+  - 修复：在highlight_engine.rs中添加style_to_css_class函数，确保生成的CSS类名与前端样式定义一致
+  - 支持两种样式语法：空格分隔的样式和CSS语法（带分号）
+  - 增强样式解析能力，确保"color: blue;"等CSS语法能正确转换为对应的CSS类
+  - 文件：[highlight_engine.rs](file:///e:/Code/github/large-log-viewer/src-tauri/src/highlight_engine.rs)
+
+- **修复前端样式应用逻辑**：
+  - 问题：extra字段的高亮样式没有正确应用
+  - 修复：将extra字段的style属性改为class属性，确保高亮样式能正确应用
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **修复level列样式覆盖问题**：
+  - 问题：level列的硬编码样式覆盖了高亮模板的样式
+  - 修复：修改level列的样式处理逻辑，优先使用高亮模板的样式
+  - 文件：[LogList.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/LogList.svelte)
+
+- **修复高亮模板编辑器样式映射显示问题**：
+  - 问题：编辑内置高亮模板时，style_map的样式显示框为空白
+  - 修复：重新设计field类型规则的样式编辑界面，支持显示和编辑完整的style_map
+  - 文件：[HighlightEditorModal.svelte](file:///e:/Code/github/large-log-viewer/src/lib/components/HighlightEditorModal.svelte)
 
 ## v0.6.0 (2026-03-23)
 

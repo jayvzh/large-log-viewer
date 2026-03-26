@@ -49,40 +49,41 @@ impl AppState {
     }
     
     async fn get_or_create_parser(&self, template_name: Option<&str>, lines_for_detection: Option<&[&str]>) -> Result<Option<Arc<LogTemplateParser>>, String> {
-        let _cached_name = self.cached_template_name.read().await.clone();
+        // 总是创建新的解析器，确保模板选择生效
+        let parser = if let Some(name) = template_name {
+            let templates = self.template_store.get_all_templates().await?;
+            let selected_template = templates.iter().find(|t| &t.name == name);
+            if let Some(t) = selected_template {
+                // 只使用选中的模板，不添加其他模板
+                let prioritized_templates = vec![t.clone()];
+                Some(Arc::new(LogTemplateParser::new(prioritized_templates)?))
+            } else {
+                return Err(format!("Template not found: {}", name));
+            }
+        } else if let Some(lines) = lines_for_detection {
+            // 清除之前的缓存，确保每次自动检测都重新进行
+            {
+                let mut cached_name = self.cached_template_name.write().await;
+                *cached_name = None;
+            }
             
-            // 总是创建新的解析器，确保模板选择生效
-            let parser = if let Some(name) = template_name {
-                let templates = self.template_store.get_all_templates().await?;
-                let selected_template = templates.iter().find(|t| &t.name == name);
-                if let Some(t) = selected_template {
-                    // 只使用选中的模板，不添加其他模板
-                    let prioritized_templates = vec![t.clone()];
-                    Some(Arc::new(LogTemplateParser::new(prioritized_templates)?))
-                } else {
-                    return Err(format!("Template not found: {}", name));
-                }
-            } else if let Some(lines) = lines_for_detection {
-                let templates = self.template_store.get_all_templates().await?;
-                if !templates.is_empty() {
-                    let detector = LogTemplateParser::new(templates)?;
-                    let results = detector.detect_best_template(lines);
-                    if let Some(best) = results.first() {
-                        if best.match_rate > 0.5 {
-                            let templates = self.template_store.get_all_templates().await?;
-                            let template = templates.iter().find(|t| &t.name == &best.template_name);
-                            if let Some(t) = template {
-                                // 只使用检测到的模板，不添加其他模板
-                                let prioritized_templates = vec![t.clone()];
-                                let parser = Arc::new(LogTemplateParser::new(prioritized_templates)?);
-                                {
-                                    let mut cached_name = self.cached_template_name.write().await;
-                                    *cached_name = Some(t.name.clone());
-                                }
-                                return Ok(Some(parser));
-                            } else {
-                                None
+            let templates = self.template_store.get_all_templates().await?;
+            if !templates.is_empty() {
+                let detector = LogTemplateParser::new(templates)?;
+                let results = detector.detect_best_template(lines);
+                if let Some(best) = results.first() {
+                    if best.match_rate > 0.5 {
+                        let templates = self.template_store.get_all_templates().await?;
+                        let template = templates.iter().find(|t| &t.name == &best.template_name);
+                        if let Some(t) = template {
+                            // 只使用检测到的模板，不添加其他模板
+                            let prioritized_templates = vec![t.clone()];
+                            let parser = Arc::new(LogTemplateParser::new(prioritized_templates)?);
+                            {
+                                let mut cached_name = self.cached_template_name.write().await;
+                                *cached_name = Some(t.name.clone());
                             }
+                            return Ok(Some(parser));
                         } else {
                             None
                         }
@@ -94,7 +95,10 @@ impl AppState {
                 }
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
         
         {
             let mut cached_parser = self.template_parser.write().await;
@@ -476,6 +480,9 @@ pub async fn get_entries(
     let mut views: Vec<LogEntryView> = entries.iter().map(LogEntryView::from).collect();
     
     if let Some(profile_name) = highlight_profile {
+        // Ensure highlight engine is loaded with current profiles
+        state.update_highlight_engine().await?;
+        
         let engine = state.highlight_engine.read().await;
         for (view, entry) in views.iter_mut().zip(&entries) {
             view.highlight_spans = engine.process_entry(entry, &profile_name);
@@ -736,6 +743,9 @@ pub async fn get_entry_detail(
             view.raw = raw;
             
             if let Some(profile_name) = highlight_profile {
+                // Ensure highlight engine is loaded with current profiles
+                state.update_highlight_engine().await?;
+                
                 let engine = state.highlight_engine.read().await;
                 view.highlight_spans = engine.process_entry(&e, &profile_name);
             }
@@ -947,6 +957,9 @@ pub async fn filter_logs(
     let mut views: Vec<LogEntryView> = entries.iter().map(LogEntryView::from).collect();
     
     if let Some(profile_name) = highlight_profile {
+        // Ensure highlight engine is loaded with current profiles
+        state.update_highlight_engine().await?;
+        
         let engine = state.highlight_engine.read().await;
         for (view, entry) in views.iter_mut().zip(&entries) {
             view.highlight_spans = engine.process_entry(entry, &profile_name);
